@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "/ABSOLUTE/PATH/TO/AgenticWisp/bin/wisp signal UserPromptSubmit", "timeout": 5 } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "/ABSOLUTE/PATH/TO/AgenticWisp/bin/wisp signal PreToolUse", "timeout": 5 } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "/ABSOLUTE/PATH/TO/AgenticWisp/bin/wisp signal PostToolUse", "timeout": 5 } ] }
+    ],
+    "PostToolUseFailure": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "/ABSOLUTE/PATH/TO/AgenticWisp/bin/wisp signal PostToolUseFailure", "timeout": 5 } ] }
+    ],
+    "PermissionRequest": [
+      { "hooks": [ { "type": "command", "command": "/ABSOLUTE/PATH/TO/AgenticWisp/bin/wisp signal PermissionRequest", "timeout": 5 } ] }
+    ],
+    "Notification": [
+      { "hooks": [ { "type": "command", "command": "/ABSOLUTE/PATH/TO/AgenticWisp/bin/wisp signal Notification", "timeout": 5 } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "/ABSOLUTE/PATH/TO/AgenticWisp/bin/wisp signal Stop", "timeout": 5 } ] }
+    ],
+    "StopFailure": [
+      { "hooks": [ { "type": "command", "command": "/ABSOLUTE/PATH/TO/AgenticWisp/bin/wisp signal StopFailure", "timeout": 5 } ] }
+    ]
+  }
+}
