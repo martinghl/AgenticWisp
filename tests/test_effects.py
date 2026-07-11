@@ -101,5 +101,37 @@ class ComposeCoreTest(unittest.TestCase):
         self.assertFalse(any(pc in flat for pc in "✦⋆∘•"))
 
 
+class HeartbeatTest(unittest.TestCase):
+    _BLK = " ▁▂▃▄▅▆▇█"
+
+    def _avg(self, state):
+        tot = n = 0
+        for i in range(40):
+            for c in effects.heartbeat(state, i * 0.1, 24):
+                tot += self._BLK.index(c); n += 1
+        return tot / n
+
+    def test_length_and_charset(self):
+        s = effects.heartbeat("tool", 1.0, width=12)
+        self.assertEqual(len(s), 12)
+        self.assertTrue(all(c in self._BLK for c in s))
+
+    def test_deterministic(self):
+        self.assertEqual(effects.heartbeat("idle", 2.5, 12, 0.3, 0.0),
+                         effects.heartbeat("idle", 2.5, 12, 0.3, 0.0))
+
+    def test_busier_is_taller_on_average(self):
+        self.assertGreater(self._avg("tool"), self._avg("idle"))
+        self.assertGreater(self._avg("thinking"), self._avg("idle"))
+
+    def test_pulse_lifts_the_wave(self):
+        base = sum(self._BLK.index(c) for c in effects.heartbeat("idle", 0.0, 24, 0.0, 0.0))
+        lifted = sum(self._BLK.index(c) for c in effects.heartbeat("idle", 0.0, 24, 0.0, 1.0))
+        self.assertGreater(lifted, base)
+
+    def test_unknown_state_ok(self):
+        self.assertEqual(len(effects.heartbeat("bogus", 1.0, 12)), 12)
+
+
 if __name__ == "__main__":
     unittest.main()

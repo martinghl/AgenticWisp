@@ -3,13 +3,13 @@ import http.client
 import json
 import os
 import time
-from collections import deque
 
 from rich.color import Color
 from rich.style import Style
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Vertical
+from textual.content import Content
 from textual.widgets import DataTable, Static
 
 from agenticwisp import protocol
@@ -20,14 +20,25 @@ from agenticwisp.tui import effects, render
 os.environ.setdefault("COLORTERM", "truecolor")
 
 DEFAULT_PORT = 9099
-_HIST = 12          # 心跳采样长度
+_HEART_W = 12       # 心跳波形宽度
+_PULSE_DECAY = 0.7  # 状态切换搏动衰减秒
 _TRANS = 0.6        # 状态过渡秒
 _BOOT = 0.8         # 开机淡入秒
+_TOKEN_SURGE_SCALE = 30000   # token delta 达此量→满幅涌动
+_TOKEN_PULSE_DECAY = 2.5     # token 涌动衰减秒
 
 
 def fetch_sessions(host, port, timeout=1.0):
     conn = http.client.HTTPConnection(host, port, timeout=timeout)
     conn.request("GET", "/sessions")
+    data = conn.getresponse().read().decode("utf-8")
+    conn.close()
+    return json.loads(data)
+
+
+def fetch_usage(host, port, timeout=1.0):
+    conn = http.client.HTTPConnection(host, port, timeout=timeout)
+    conn.request("GET", "/usage")
     data = conn.getresponse().read().decode("utf-8")
     conn.close()
     return json.loads(data)
@@ -77,12 +88,57 @@ class ReactorCore(Static):
         return text
 
 
+class DashboardPanel(Static):
+    """表格下方的全局用量仪表盘;set_data(agg) 后渲染。黑底友好:亮字、不铺深色块。"""
+
+    def __init__(self, **kw):
+        super().__init__("", **kw)
+        self._agg = None
+
+    def set_data(self, agg):
+        self._agg = agg
+        self.update(self._render())
+
+    @property
+    def renderable(self):
+        """暴露当前渲染内容供测试读取(textual 8.x 的 Static 不再自带公开的 renderable 属性)。"""
+        return self._render()
+
+    def _render(self):
+        # 注意:_render 与 Widget._render()(textual 内部私有方法,绘制管线用它取 Visual)同名,
+        # 子类覆盖后绘制管线调用的就是这个方法 —— 必须返回 Visual(Content),
+        # 若直接返回裸 rich.Text 会在挂载后的 Visual.to_strips 处崩溃(无 render_strips)。
+        return Content.from_rich_text(self._render_text())
+
+    def _render_text(self):
+        a = self._agg
+        if not a:
+            return Text("… 等待用量", style="#22b8cf")
+        t = Text()
+        t.append("─ USAGE · global\n", style="#8b5cf6 bold")
+        t.append(f" cost ≈ {render.fmt_cost(a.get('cost_usd', 0))}", style="#d2aa1e bold")
+        t.append(f"   in {render.fmt_tokens(a.get('in', 0))}"
+                 f"  out {render.fmt_tokens(a.get('out', 0))}"
+                 f"  cache {render.fmt_tokens(a.get('cache', 0))}\n", style="white")
+        t.append(f" turns {a.get('turns', 0)}   ·  {a.get('sessions', 0)} live"
+                 f"  ·  web {a.get('web_search', 0)}/{a.get('web_fetch', 0)}\n", style="#8899aa")
+        total = a.get("cost_usd", 0) or 1.0
+        for r in a.get("by_model", [])[:3]:
+            n = max(0, min(10, int(round((r.get("cost_usd", 0) / total) * 10))))
+            bar = "▓" * n + "░" * (10 - n)
+            t.append(f" ● {render.short_model(r.get('model'))}"
+                     f"  {r.get('turns', 0)}t  {render.fmt_cost(r.get('cost_usd', 0))}  ", style="#22a04a")
+            t.append(bar + "\n", style="#8b5cf6")
+        return t
+
+
 class WispApp(App):
     CSS = """
     Screen { layout: vertical; }
     #reactor { height: 11; }
     #status { height: 1; content-align: center middle; color: white; text-style: bold; }
     #table { height: 1fr; }
+    #dash { height: 7; }
     """
     BINDINGS = [("q", "quit", "退出"), ("escape", "unfocus", "返回总览")]
 
@@ -90,20 +146,31 @@ class WispApp(App):
         super().__init__()
         self.host, self.port, self.poll = host, port, poll
         self._focus_id = None
-        self._history = {}
         self._session_ids = []
+        self._row_state = {}      # row_key → 当前状态(检测变化以触发搏动)
+        self._last_change = {}    # row_key → 上次状态变化时间
+        self._rows = []           # [(row_key, state)] 供动画
+        self._last_tokens = {}    # sid → 上次 token 总数(算 delta)
+        self._token_surge = {}    # sid → 当前涌动幅度 0..1
+        self._token_surge_at = {} # sid → 涌动触发时刻
+        self._t0 = time.monotonic()
 
     def compose(self) -> ComposeResult:
         with Vertical():
             yield ReactorCore(id="reactor")
             yield Static("… 等待中枢", id="status")
             yield DataTable(id="table")
+            yield DashboardPanel(id="dash")
 
     def on_mount(self):
         table = self.query_one("#table", DataTable)
-        table.add_columns("#", "session", "cwd", "状态", "工具", "心跳")
+        table.add_columns("#", "session", "cwd", "状态", "工具")
+        table.add_column("心跳", key="heart")
+        table.add_column("time", key="time")
+        table.add_column("token", key="tok")
         table.cursor_type = "none"  # 用数字键选,不靠光标
         self.set_interval(self.poll, self.refresh_state)
+        self.set_interval(1 / 5, self.animate_heartbeats)  # 5fps,只动心跳单元格
 
     def action_unfocus(self):
         self._focus_id = None
@@ -122,25 +189,52 @@ class WispApp(App):
             sessions = fetch_sessions(self.host, self.port, timeout=1.0)
         except Exception:
             self.query_one("#status", Static).update("… 等待中枢")
+            self.query_one("#dash", DashboardPanel).set_data(None)
             return
-        # 采样心跳(用全量 sessions,保证历史连续),并清理消失的 session
+        now = time.monotonic() - self._t0
+        # 展开成显示行:父 session + 其每个子agent
+        display = []   # (row_key, kind, cols, state)  kind: "sess"|"sub"
+        for i, s in enumerate(sessions, start=1):
+            display.append((s["id"], "sess", i, s))
+            for sub in s.get("subagents", []):
+                display.append((f"{s['id']}\x00{sub['id']}", "sub", None, sub))
+        # 状态变化 → 搏动;清理消失行
         seen = set()
-        for s in sessions:
-            seen.add(s["id"])
-            self._history.setdefault(s["id"], deque(maxlen=_HIST)).append(
-                effects.state_level(s["state"]))
-        for k in list(self._history):
+        for key, kind, _num, obj in display:
+            seen.add(key)
+            if self._row_state.get(key) != obj["state"]:
+                self._last_change[key] = now
+            self._row_state[key] = obj["state"]
+        for k in list(self._row_state):
             if k not in seen:
-                del self._history[k]
-        self._session_ids = [s["id"] for s in sessions]
-        # 焦点失效(session 已消失)则清除
+                self._row_state.pop(k, None); self._last_change.pop(k, None)
+        self._session_ids = [s["id"] for s in sessions]          # 数字键只选父
+        # token 上涨 → 记录一次涌动(仅父 session)
+        for s in sessions:
+            sid = s["id"]; tok = s.get("tokens")
+            if tok is None:
+                continue
+            prev = self._last_tokens.get(sid)
+            if prev is not None and tok - prev > 0:
+                self._token_surge[sid] = min(1.0, (tok - prev) / _TOKEN_SURGE_SCALE)
+                self._token_surge_at[sid] = now
+            self._last_tokens[sid] = tok
+        live = set(self._session_ids)
+        for d in (self._last_tokens, self._token_surge, self._token_surge_at):
+            for k in list(d):
+                if k not in live:
+                    d.pop(k, None)
+        self._rows = [(key, obj["state"]) for key, _k, _n, obj in display]
+        # 焦点失效则清除
         focused = next((s for s in sessions if s["id"] == self._focus_id), None)
         if self._focus_id and focused is None:
             self._focus_id = None
-        # 聚合态:专注则用该 session 的态,否则全局聚合
-        agg = focused["state"] if focused else protocol.aggregate(s["state"] for s in sessions)
+        agg = protocol.aggregate(
+            [s["state"] for s in sessions] +
+            [sub["state"] for s in sessions for sub in s.get("subagents", [])])
+        if focused:
+            agg = focused["state"]
         self.query_one("#reactor", ReactorCore).set_state(agg)
-        # 状态行:明写怎么选
         if focused:
             self.query_one("#status", Static).update(
                 f"专注 ▸ {focused.get('name', '')}      ·      按 0 / Esc 返回总览")
@@ -148,15 +242,59 @@ class WispApp(App):
             zh = protocol.DISPLAY.get(agg, {}).get("label", agg)
             self.query_one("#status", Static).update(
                 f"◉ {zh}      ·      {len(sessions)} live      ·      按 1–9 选一个 session")
-        # 表格:全部显示,带编号 + 焦点标记(▸)
         table = self.query_one("#table", DataTable)
         table.clear()
-        for i, (s, (name, cwd, state, tool, hexc)) in enumerate(
-                zip(sessions, render.build_rows(sessions)), start=1):
-            mark = "▸" if s["id"] == self._focus_id else " "
-            spark = effects.sparkline(list(self._history.get(s["id"], [])), width=_HIST)
-            table.add_row(f"{mark}{i}", name, cwd, Text(f"● {state}", style=hexc), tool,
-                          Text(spark, style=hexc), key=s["id"])
+        for key, kind, num, obj in display:
+            state = obj["state"]
+            hexc = render.state_hex(state)
+            beat = effects.heartbeat(state, now, _HEART_W, phase=self._phase(key),
+                                     pulse=min(1.0, self._pulse(key, now) + self._token_pulse(key, now)))
+            dur = render.fmt_duration(now - self._last_change.get(key, now))
+            if kind == "sess":
+                mark = "▸" if obj["id"] == self._focus_id else " "
+                nm = obj.get("name", "")
+                cwd = render.short_cwd(obj.get("cwd", ""))
+                tool = obj.get("tool") or ""
+                num_col = f"{mark}{num}"
+                tok = render.fmt_tokens(obj.get("tokens"))
+            else:
+                nm = f"  ↳ {obj.get('type', 'agent')}"
+                cwd, tool = "", (obj.get("tool") or "")
+                num_col = " "
+                tok = "—"
+            table.add_row(num_col, nm, cwd, Text(f"● {state}", style=hexc), tool,
+                          Text(beat, style=hexc), dur, tok, key=key)
+        try:
+            self.query_one("#dash", DashboardPanel).set_data(
+                fetch_usage(self.host, self.port, timeout=1.0))
+        except Exception:
+            pass
+
+    def _phase(self, key):
+        return (sum(ord(c) for c in key) % 100) / 100.0 * 6.2832
+
+    def _pulse(self, key, now):
+        return max(0.0, 1.0 - (now - self._last_change.get(key, -10.0)) / _PULSE_DECAY)
+
+    def _token_pulse(self, key, now):
+        if "\x00" in key:                       # 子行不吃 token 涌动
+            return 0.0
+        mag = self._token_surge.get(key, 0.0)
+        if mag <= 0.0:
+            return 0.0
+        return mag * max(0.0, 1.0 - (now - self._token_surge_at.get(key, -1e9)) / _TOKEN_PULSE_DECAY)
+
+    def animate_heartbeats(self):
+        now = time.monotonic() - self._t0
+        table = self.query_one("#table", DataTable)
+        for key, state in self._rows:
+            beat = effects.heartbeat(state, now, _HEART_W, phase=self._phase(key),
+                                     pulse=min(1.0, self._pulse(key, now) + self._token_pulse(key, now)))
+            try:
+                table.update_cell(key, "heart", Text(beat, style=render.state_hex(state)))
+                table.update_cell(key, "time", render.fmt_duration(now - self._last_change.get(key, now)))
+            except Exception:
+                pass
 
 
 def run_app(argv=None):

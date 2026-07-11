@@ -11,7 +11,8 @@ class InstallHooksTest(unittest.TestCase):
         h = install_hooks.build_hooks("/x/bin/wisp")
         self.assertEqual(set(h), {"UserPromptSubmit", "PreToolUse", "PostToolUse",
                                   "PostToolUseFailure", "PermissionRequest",
-                                  "Notification", "Stop", "StopFailure"})
+                                  "Notification", "Stop", "StopFailure",
+                                  "SubagentStart", "SubagentStop"})
         # 工具类事件带 matcher,其它不带
         self.assertEqual(h["PreToolUse"][0]["matcher"], "*")
         self.assertNotIn("matcher", h["Stop"][0])
@@ -21,7 +22,7 @@ class InstallHooksTest(unittest.TestCase):
     def test_merge_creates_and_is_idempotent(self):
         path = os.path.join(tempfile.mkdtemp(), "settings.json")
         added1, backup1, _ = install_hooks.merge_into_settings("/x/bin/wisp", path)
-        self.assertEqual(len(added1), 8)
+        self.assertEqual(len(added1), 10)
         self.assertIsNone(backup1)  # 无原文件 → 不备份
         with open(path) as f:
             self.assertIn("hooks", json.load(f))

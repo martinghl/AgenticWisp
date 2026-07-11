@@ -18,6 +18,8 @@ EVENTS = [
     ("Notification", None),
     ("Stop", None),
     ("StopFailure", None),
+    ("SubagentStart", None),
+    ("SubagentStop", None),
 ]
 
 

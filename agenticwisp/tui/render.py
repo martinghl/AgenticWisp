@@ -1,5 +1,6 @@
 """终端灯的纯渲染函数(与 textual 解耦,便于测试)。"""
 import math
+import os
 
 from agenticwisp import protocol
 
@@ -33,3 +34,53 @@ def build_rows(sessions):
         rows.append((s.get("name", ""), s.get("cwd", ""), s["state"],
                      s.get("tool") or "", state_hex(s["state"])))
     return rows
+
+
+def fmt_duration(seconds):
+    """把秒数压缩成 8s / 2m14s / 1h2m。"""
+    s = int(max(0, seconds))
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60}s"
+    return f"{s // 3600}h{(s % 3600) // 60}m"
+
+
+def fmt_tokens(n):
+    """把 token 总数压缩成 —(None) / 999 / 312k / 1.24M。"""
+    if n is None:
+        return "—"
+    n = int(n)
+    if n < 1000:
+        return str(n)
+    if n < 1_000_000:
+        return f"{n / 1000:.0f}k"
+    return f"{n / 1_000_000:.2f}M"
+
+
+def short_cwd(cwd):
+    """cwd 取末段目录名腾出横向空间;根 / 保留;空串保留。"""
+    if not cwd:
+        return ""
+    if cwd == "/":
+        return "/"
+    return os.path.basename(cwd.rstrip("/")) or cwd
+
+
+def fmt_cost(x):
+    """美元:<=0→"$0.00";<0.01→"<$0.01";<100→"$12.47";>=100→"$1.2k"。"""
+    x = float(x or 0)
+    if x <= 0:
+        return "$0.00"
+    if x < 0.01:
+        return "<$0.01"
+    if x < 100:
+        return f"${x:.2f}"
+    return f"${x / 1000:.1f}k"
+
+
+def short_model(model):
+    """去 claude- 前缀便于窄面板显示;空→"?"。"""
+    if not model:
+        return "?"
+    return model[7:] if model.startswith("claude-") else model

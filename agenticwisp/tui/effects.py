@@ -123,3 +123,23 @@ def compose_core(w, h, state, t, from_state=None, trans_p=1.0, fancy=True):
     rule = "─" * len(eng)
     _place_lines(grid, w, h, [rule, eng, rule], _WHITE)
     return grid
+
+
+# 心跳波形:(base 基线, amp 振幅, speed 速度) —— 越忙越高越快
+_BEAT = {
+    "idle":     (1.0, 0.8, 0.7),
+    "thinking": (2.5, 1.3, 1.3),
+    "waiting":  (3.3, 1.6, 1.7),
+    "tool":     (4.0, 2.0, 2.2),
+    "error":    (4.5, 2.2, 2.6),
+}
+
+
+def heartbeat(state, t, width=12, phase=0.0, pulse=0.0):
+    """一条随时间跳动的波形字符串;动的方式编码忙碌度,pulse 是状态切换的搏动。"""
+    base, amp, speed = _BEAT.get(state, _BEAT["idle"])
+    out = []
+    for x in range(width):
+        level = base + pulse * 2.5 + amp * math.sin(x * 0.9 + t * speed + phase)
+        out.append(_BLOCKS[max(0, min(8, int(round(level))))])
+    return "".join(out)

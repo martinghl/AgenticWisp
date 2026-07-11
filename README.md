@@ -41,6 +41,10 @@ The "light" can be a **cinematic terminal panel** (the *Reactor Core*), a **brow
 - **Multi-session aware** — sees every live Claude Code session on the machine, by its real name (from `/rename`) and working directory.
 - **Aggregate light** — one glance tells you the "busiest" state across all sessions; or press a number to **focus one session**.
 - **5 states, animated** — hue is always the state (glanceable); only brightness/texture animate.
+- **Subagent tracking** — each session's running subagents appear as indented sub-rows, **each with its own state and heartbeat**.
+- **Live heartbeats** — every row ends in a heartbeat wave that undulates by state; a row **pulses harder when that session's token usage jumps**.
+- **Per-row time + tokens** — each row shows how long it's been in its current state and its cumulative token total.
+- **Usage dashboard** — a panel below the table estimates **total cost ($)** across all sessions, broken down by model (cheap cache reads are de-weighted, so the number reflects what you actually spent).
 - **Three display ends**: a `textual` terminal panel, a self-contained browser page, and a stdlib-only fallback lamp.
 - **Never breaks Claude** — the hook client has a 0.3 s timeout, swallows every error, and always exits 0.
 - **No cloud, no exposed ports** — everything rides your existing SSH tunnel; the hub binds `127.0.0.1` only.
@@ -60,8 +64,8 @@ The "light" can be a **cinematic terminal panel** (the *Reactor Core*), a **brow
                                                              └─ browser lamp   ◀─ ssh -L ─ your browser
 ```
 
-- **`wisp signal`** (hook client) posts `{session_id, state, tool}` to the hub and exits.
-- **`wispd`** (hub) keeps per-session state and joins it with Claude Code's own live-session registry (`~/.claude/sessions/*.json`) to get real names/cwd. It serves `GET /sessions`, `GET /aggregate`, and `GET /state`.
+- **`wisp signal`** (hook client) posts `{session_id, state, tool}` — plus `agent_id`/`agent_type` when the event comes from a subagent — to the hub and exits.
+- **`wispd`** (hub) keeps per-session state (and per-subagent state), joins it with Claude Code's own live-session registry (`~/.claude/sessions/*.json`) for real names/cwd, and parses each session's transcript for token usage. It serves `GET /sessions`, `GET /aggregate`, `GET /state`, and `GET /usage` (per-model tokens + estimated cost).
 - **Displays** poll the hub. The terminal lamp runs *on the server* and paints your SSH window; the browser lamp is a page the hub serves, reached via a one-line `ssh -L` forward.
 
 ## Requirements
@@ -116,7 +120,13 @@ Now the light follows Claude automatically: you type → 🟡, it runs a tool �
 | `0` / `Esc` | back to the **aggregate** overview |
 | `q` | quit |
 
-The panel shows a big animated **Reactor Core** (aggregate state) on top and a **numbered session table** below, each row ending in a live heartbeat sparkline of that session's recent activity.
+The panel has three zones, top to bottom:
+
+- a big animated **Reactor Core** showing the aggregate (or focused) state;
+- a **numbered session table** — each row shows state, current tool, a live **heartbeat** wave, **time in state**, and **cumulative tokens**; a session's running **subagents** appear beneath it as `↳`-prefixed sub-rows with their own state and heartbeat, and a row pulses harder when its token usage jumps;
+- a **usage dashboard** — global estimated **cost ($)**, an input/output/cache token breakdown, turn/session/web-search counts, and a per-model cost bar.
+
+The panel is tuned for cross-continental SSH (low frame rate, per-cell updates, forced truecolor) and for dark terminals (bright text, no heavy fills).
 
 ## Browser lamp
 

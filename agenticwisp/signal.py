@@ -1,4 +1,4 @@
-"""AgenticWisp hook 客户端:把(session, 状态)发给中枢就退出;绝不拖慢 Claude。"""
+"""AgenticWisp hook 客户端:把(session/子agent, 状态)发给中枢就退出;绝不拖慢 Claude。"""
 import http.client
 import json
 import os
@@ -11,56 +11,81 @@ DEFAULT_TIMEOUT = 0.3  # 秒。极短:连不上立刻放弃
 
 
 def read_stdin_context(stream):
-    """从钩子 stdin 的 JSON 读 (session_id, tool_name);任何问题返回 (None, None)。"""
+    """从钩子 stdin 的 JSON 读 {session_id, tool, agent_id, agent_type};任何问题返回 {}。"""
     try:
         raw = stream.read()
         if not raw or not raw.strip():
-            return None, None
+            return {}
         d = json.loads(raw)
         if not isinstance(d, dict):
-            return None, None
-        return d.get("session_id"), d.get("tool_name")
+            return {}
+        return {"session_id": d.get("session_id"), "tool": d.get("tool_name"),
+                "agent_id": d.get("agent_id"), "agent_type": d.get("agent_type")}
     except Exception:
-        return None, None
+        return {}
 
 
-def send(state, session_id=None, tool=None, host="127.0.0.1", port=DEFAULT_PORT, timeout=DEFAULT_TIMEOUT):
-    """更新某 session 的细状态。成功返回规约状态;任何失败返回 None(绝不抛)。"""
-    norm = protocol.normalize(state)
-    if norm is None:
-        return None
+def _post(body, host="127.0.0.1", port=DEFAULT_PORT, timeout=DEFAULT_TIMEOUT):
+    """POST 一个 JSON body 到 /state;任何失败返回 None(绝不抛)。"""
     try:
-        body = json.dumps({
-            "session_id": session_id or os.environ.get("WISP_SESSION") or "manual",
-            "state": norm,
-            "tool": tool,
-        })
+        data = json.dumps(body).encode("utf-8")
         conn = http.client.HTTPConnection(host, port, timeout=timeout)
-        conn.request("POST", "/state", body=body.encode("utf-8"),
-                     headers={"Content-Type": "application/json"})
+        conn.request("POST", "/state", body=data, headers={"Content-Type": "application/json"})
         resp = conn.getresponse()
         resp.read()
         conn.close()
-        return norm if resp.status == 200 else None
+        return resp.status == 200
     except Exception:
-        return None  # 中枢没起 / 超时 / 网络错 / 序列化错 —— 静默,别打扰 Claude
+        return None
+
+
+def send(state, session_id=None, tool=None, host="127.0.0.1", port=DEFAULT_PORT, timeout=DEFAULT_TIMEOUT):
+    """更新某 session 自己的状态。成功返回规约状态;失败返回 None。"""
+    norm = protocol.normalize(state)
+    if norm is None:
+        return None
+    ok = _post({"session_id": session_id or os.environ.get("WISP_SESSION") or "manual",
+                "state": norm, "tool": tool}, host, port, timeout)
+    return norm if ok else None
+
+
+def _port():
+    try:
+        return int(os.environ.get("WISP_PORT", DEFAULT_PORT))
+    except (TypeError, ValueError):
+        return DEFAULT_PORT
 
 
 def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
     if not argv:
         return 0
-    session_id, tool = (None, None)
+    event = argv[0]
+    ctx = {}
     try:
         if sys.stdin is not None and not sys.stdin.isatty():
-            session_id, tool = read_stdin_context(sys.stdin)
+            ctx = read_stdin_context(sys.stdin)
     except Exception:
-        session_id, tool = None, None
+        ctx = {}
+    sid = ctx.get("session_id") or os.environ.get("WISP_SESSION") or "manual"
+    aid = ctx.get("agent_id")
+    port = _port()
     try:
-        port = int(os.environ.get("WISP_PORT", DEFAULT_PORT))
-    except (TypeError, ValueError):
-        port = DEFAULT_PORT
-    send(argv[0], session_id=session_id, tool=tool, port=port)
+        if event == "SubagentStop":
+            if aid:
+                _post({"session_id": sid, "agent_id": aid, "kind": "stop"}, port=port)
+            return 0
+        state = protocol.normalize("thinking" if event == "SubagentStart" else event)
+        if state is None:
+            return 0
+        body = {"session_id": sid, "state": state, "tool": ctx.get("tool")}
+        if aid:
+            body["agent_id"] = aid
+            if ctx.get("agent_type"):
+                body["agent_type"] = ctx.get("agent_type")
+        _post(body, port=port)
+    except Exception:
+        pass
     return 0  # 永远返回 0:灯坏了不能让钩子失败
 
 

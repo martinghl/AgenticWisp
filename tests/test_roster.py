@@ -15,17 +15,17 @@ class RosterTest(unittest.TestCase):
             json.dump(obj, f)
 
     def test_reads_name_cwd_status(self):
-        self._write("1.json", {"sessionId": "aaa", "cwd": "/home/user/project",
+        self._write("1.json", {"sessionId": "aaa", "cwd": "/data/gli9",
                                 "name": "Agentic Wisp", "status": "busy", "pid": 1})
         r = roster.read_roster(self.dir)
         self.assertEqual(r["aaa"]["name"], "Agentic Wisp")
-        self.assertEqual(r["aaa"]["cwd"], "/home/user/project")
+        self.assertEqual(r["aaa"]["cwd"], "/data/gli9")
         self.assertEqual(r["aaa"]["status"], "busy")
 
     def test_name_falls_back_to_cwd_basename(self):
-        self._write("2.json", {"sessionId": "bbb", "cwd": "/home/user/project/data-pipeline"})
+        self._write("2.json", {"sessionId": "bbb", "cwd": "/data/gli9/disease_progression"})
         r = roster.read_roster(self.dir)
-        self.assertEqual(r["bbb"]["name"], "data-pipeline")
+        self.assertEqual(r["bbb"]["name"], "disease_progression")
 
     def test_name_falls_back_to_id_prefix(self):
         self._write("3.json", {"sessionId": "0123456789abcdef"})
