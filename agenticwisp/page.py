@@ -2,11 +2,12 @@
 import json
 
 from agenticwisp import protocol
+from agenticwisp import i18n
 
 # 注意:CFG 仅注入 protocol.DISPLAY 的静态配置,不含用户/请求数据。session 名/cwd 在
 # JS 端用 textContent 写入(不拼进 HTML),故无 </script> 注入风险。
 _TEMPLATE = """<!doctype html>
-<html lang="zh"><head><meta charset="utf-8">
+<html lang="__LANG__"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AgenticWisp</title>
 <style>
@@ -31,7 +32,7 @@ _TEMPLATE = """<!doctype html>
 </style></head>
 <body><div id="wrap">
   <div id="lampwrap"><canvas id="lamp"></canvas><div id="label">…</div>
-    <div id="hint">点卡片专注 · 再点返回</div></div>
+    <div id="hint">__HINT__</div></div>
   <div id="grid"></div>
 </div>
 <script>
@@ -46,7 +47,7 @@ function draw(){
   if(!connected){
     ctx.fillStyle = '#333';
     ctx.fillRect(0,0,cvs.width,cvs.height);
-    label.textContent = '… 等待中枢';
+    label.textContent = '__WAITING__';
     requestAnimationFrame(draw);
     return;
   }
@@ -93,9 +94,13 @@ setInterval(tick, CFG.poll); tick();
 def render_page(poll_ms=250):
     cfg = {
         "colors": {s: protocol.DISPLAY[s]["web"] for s in protocol.STATES},
-        "labels": {s: protocol.DISPLAY[s]["label"] for s in protocol.STATES},
+        "labels": {s: i18n.state_label(s) for s in protocol.STATES},
         "period": {s: (4.0 if s == protocol.IDLE else 1.5 if s == protocol.THINKING else 0.6)
                    for s in protocol.STATES},
         "poll": poll_ms,
     }
-    return _TEMPLATE.replace("__CFG__", json.dumps(cfg, ensure_ascii=False))
+    return (_TEMPLATE
+            .replace("__CFG__", json.dumps(cfg, ensure_ascii=False))
+            .replace("__LANG__", i18n.lang())
+            .replace("__HINT__", i18n.t("page.hint"))
+            .replace("__WAITING__", i18n.t("page.waiting")))

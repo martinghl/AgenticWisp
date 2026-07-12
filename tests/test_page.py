@@ -22,6 +22,31 @@ class PageTest(unittest.TestCase):
     def test_is_html_document(self):
         self.assertTrue(render_page().lstrip().lower().startswith("<!doctype html"))
 
+    def test_render_page_english_by_default(self):
+        from agenticwisp import page
+        html = page.render_page()
+        self.assertIn('<html lang="en">', html)
+        self.assertIn("click a card to focus", html)
+        self.assertIn("waiting for hub", html)
+        self.assertIn("IDLE", html)          # 状态标签英文
+        self.assertNotIn("点卡片专注", html)
+
+    def test_render_page_chinese_when_set(self):
+        import os
+        from agenticwisp import page
+        old = os.environ.get("WISP_LANG")
+        os.environ["WISP_LANG"] = "zh"
+        try:
+            html = page.render_page()
+            self.assertIn('<html lang="zh">', html)
+            self.assertIn("点卡片专注", html)
+            self.assertIn("空闲", html)
+        finally:
+            if old is None:
+                os.environ.pop("WISP_LANG", None)
+            else:
+                os.environ["WISP_LANG"] = old
+
 
 if __name__ == "__main__":
     unittest.main()

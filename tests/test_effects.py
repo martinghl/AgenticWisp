@@ -54,7 +54,7 @@ class GlyphTest(unittest.TestCase):
     def test_banner_ascii_width1(self):
         eng, zh = effects.banner("tool")
         self.assertEqual(eng, "T O O L")
-        self.assertEqual(zh, "调用工具")
+        self.assertEqual(zh, "")                       # zh 已下放到 i18n
         for s in ("idle", "thinking", "tool", "waiting", "error"):
             e, _ = effects.banner(s)
             self.assertTrue(all(ord(c) < 128 for c in e))  # 全 ASCII,宽度 1 对齐安全

@@ -21,7 +21,20 @@ class LampRenderTest(unittest.TestCase):
 
     def test_disconnected_shows_waiting(self):
         out = render(None, 80, 24, connected=False)
-        self.assertIn("等待中枢", out)
+        self.assertIn("waiting for hub", out)   # 默认英文
+
+    def test_disconnected_waiting_zh(self):
+        import os
+        old = os.environ.get("WISP_LANG")
+        os.environ["WISP_LANG"] = "zh"
+        try:
+            out = render(None, 80, 24, connected=False)
+            self.assertIn("等待中枢", out)
+        finally:
+            if old is None:
+                os.environ.pop("WISP_LANG", None)
+            else:
+                os.environ["WISP_LANG"] = old
 
 
 if __name__ == "__main__":

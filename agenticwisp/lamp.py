@@ -5,7 +5,7 @@ import shutil
 import sys
 import time
 
-from agenticwisp import protocol
+from agenticwisp import protocol, i18n
 
 DEFAULT_PORT = 9099
 ESC = "\033"
@@ -14,13 +14,13 @@ ESC = "\033"
 def render(state, cols, rows, connected=True):
     """把状态渲染成填满终端的 ANSI 字符串(纯函数,便于测试)。"""
     if not connected:
-        bg, label = (40, 40, 40), "… 等待中枢 …"
+        bg, label = (40, 40, 40), i18n.t("lamp.waiting")
     else:
         disp = protocol.DISPLAY.get(state)
         if disp is None:
-            bg, label = (40, 40, 40), f"未知状态: {state}"
+            bg, label = (40, 40, 40), i18n.t("lamp.unknown", state=state)
         else:
-            bg, label = disp["rgb"], disp["label"]
+            bg, label = disp["rgb"], i18n.state_label(state)
     r, g, b = bg
     fill = f"{ESC}[48;2;{r};{g};{b}m"        # 真彩背景
     clear = f"{ESC}[2J{ESC}[H"               # 清屏 + 光标归位

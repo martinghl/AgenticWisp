@@ -49,8 +49,6 @@ _PCHARS = "✦·⋆∘•"
 _LEVELS = {"idle": 1, "thinking": 3, "waiting": 4, "tool": 5, "error": 6}
 _ENG = {"idle": "I D L E", "thinking": "T H I N K I N G", "tool": "T O O L",
         "waiting": "W A I T I N G", "error": "E R R O R"}
-_ZH = {"idle": "空闲", "thinking": "思考", "tool": "调用工具",
-       "waiting": "等你", "error": "出错"}
 
 
 def state_level(state):
@@ -66,7 +64,8 @@ def sparkline(levels, width=None):
 
 
 def banner(state):
-    return _ENG.get(state, state.upper()), _ZH.get(state, "")
+    # zh 名已下放到 i18n.state_label();banner 只供中央英文大字用
+    return _ENG.get(state, state.upper()), ""
 
 
 # 3 行半块字符画字体(只用 ▀▄█ + 空格,全单宽——固定网格里禁用双宽字符)。

@@ -180,7 +180,7 @@ class TuiAppTest(unittest.TestCase):
 
     def test_usage_hud_placeholder(self):
         from agenticwisp.tui.app import UsageHUD
-        self.assertIn("等待", UsageHUD()._render_text().plain)
+        self.assertIn("waiting", UsageHUD()._render_text().plain)
 
     def test_neon_row_columns(self):
         self.store.update("s1", "tool", "Bash", effort="max")
@@ -199,6 +199,8 @@ class TuiAppTest(unittest.TestCase):
                 self.assertIn("effort", labels)
                 self.assertIn("ctx", labels)
                 self.assertNotIn("cwd", labels)
+                self.assertIn("state", labels)   # 列头默认英文
+                self.assertNotIn("状态", labels)
                 row = table.get_row("s1")
                 joined = " ".join(str(c) for c in row)
                 self.assertIn("opus-4-8", joined)

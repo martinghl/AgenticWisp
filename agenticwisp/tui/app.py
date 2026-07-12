@@ -13,6 +13,7 @@ from textual.content import Content
 from textual.widgets import DataTable, Static
 
 from agenticwisp import palette, protocol
+from agenticwisp import i18n
 from agenticwisp.tui import effects, render
 
 # 跨 SSH 时 COLORTERM 常丢失,导致 rich 退化成 16 色、流光变难看。
@@ -117,7 +118,7 @@ class UsageHUD(Static):
     def _render_text(self):
         a = self._agg
         if not a:
-            return Text("… 等待用量", style=palette.CYAN)
+            return Text(i18n.t("tui.usage.waiting"), style=palette.CYAN)
         t = time.monotonic() - self._t0
         out = Text()
         # HUD 标题(微 glitch)
@@ -154,7 +155,8 @@ class WispApp(App):
     #table { height: 1fr; }
     #dash { height: 7; }
     """
-    BINDINGS = [("q", "quit", "退出"), ("escape", "unfocus", "返回总览")]
+    BINDINGS = [("q", "quit", i18n.t("tui.bind.quit")),
+                ("escape", "unfocus", i18n.t("tui.bind.unfocus"))]
 
     def __init__(self, host="127.0.0.1", port=DEFAULT_PORT, poll=0.5):
         super().__init__()
@@ -172,15 +174,15 @@ class WispApp(App):
     def compose(self) -> ComposeResult:
         with Vertical():
             yield ReactorCore(id="reactor")
-            yield Static("… 等待中枢", id="status")
+            yield Static(i18n.t("tui.status.waiting"), id="status")
             yield DataTable(id="table")
             yield UsageHUD(id="dash")
 
     def on_mount(self):
         table = self.query_one("#table", DataTable)
-        table.add_columns("#", "session", "model", "状态", "effort")
+        table.add_columns("#", "session", "model", i18n.t("tui.col.state"), "effort")
         table.add_column("ctx", key="ctx")
-        table.add_column("心跳", key="heart")
+        table.add_column(i18n.t("tui.col.heart"), key="heart")
         table.add_column("time", key="time")
         table.add_column("token", key="tok")
         table.cursor_type = "none"  # 用数字键选,不靠光标
@@ -203,7 +205,7 @@ class WispApp(App):
         try:
             sessions = fetch_sessions(self.host, self.port, timeout=1.0)
         except Exception:
-            self.query_one("#status", Static).update("… 等待中枢")
+            self.query_one("#status", Static).update(i18n.t("tui.status.waiting"))
             self.query_one("#dash", UsageHUD).set_data(None)
             return
         now = time.monotonic() - self._t0
@@ -252,11 +254,10 @@ class WispApp(App):
         self.query_one("#reactor", ReactorCore).set_state(agg)
         if focused:
             self.query_one("#status", Static).update(
-                f"专注 ▸ {focused.get('name', '')}      ·      按 0 / Esc 返回总览")
+                i18n.t("tui.footer.focus", name=focused.get("name", "")))
         else:
-            zh = protocol.DISPLAY.get(agg, {}).get("label", agg)
             self.query_one("#status", Static).update(
-                f"◉ {zh}      ·      {len(sessions)} live      ·      按 1–9 选一个 session")
+                i18n.t("tui.footer.overview", state=i18n.state_label(agg), n=len(sessions)))
         table = self.query_one("#table", DataTable)
         table.clear()
         for key, kind, num, obj in display:

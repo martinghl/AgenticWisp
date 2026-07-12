@@ -11,6 +11,9 @@ PIDFILE="$RUN_DIR/wispd.pid"
 
 running() { [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
 
+# Bilingual output: WISP_LANG=zh prints the 2nd arg, otherwise (default) the 1st (English).
+msg() { if [ "${WISP_LANG:-en}" = "zh" ]; then echo "$2"; else echo "$1"; fi; }
+
 # Pick the first interpreter that can import `textual` (needed only by the fancy TUI lamp).
 # Order: $WISP_PYTHON, a project-local virtualenv, then python3 / python on PATH.
 find_tui_python() {
@@ -26,21 +29,21 @@ find_tui_python() {
 cmd="${1:-help}"; shift || true
 case "$cmd" in
   up)
-    if running; then echo "hub already running (pid $(cat "$PIDFILE"))"; exit 0; fi
+    if running; then msg "hub already running (pid $(cat "$PIDFILE"))" "中枢已在运行 (pid $(cat "$PIDFILE"))"; exit 0; fi
     mkdir -p "$RUN_DIR"
     WISP_PORT="$PORT" nohup "$PY" -m agenticwisp.wispd >"$LOG" 2>&1 &
     echo $! > "$PIDFILE"
-    echo "hub started (pid $!), port $PORT, log $LOG"
+    msg "hub started (pid $!), port $PORT, log $LOG" "中枢已启动 (pid $!),端口 $PORT,日志 $LOG"
     ;;
   down)
     if running; then kill "$(cat "$PIDFILE")" 2>/dev/null || true; fi
-    rm -f "$PIDFILE"; echo "hub stopped"
+    rm -f "$PIDFILE"; msg "hub stopped" "中枢已停止"
     ;;
   status)
     if running; then
       s="$("$PY" -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:$PORT/state',timeout=2).read().decode().strip())" 2>/dev/null || echo '?')"
-      echo "running (pid $(cat "$PIDFILE")), state: $s"
-    else echo "not running"; fi
+      msg "running (pid $(cat "$PIDFILE")), state: $s" "运行中 (pid $(cat "$PIDFILE")),当前状态: $s"
+    else msg "not running" "未运行"; fi
     ;;
   signal)
     # Hook client: pure stdlib, must never break Claude. Silently no-op if python is missing.
@@ -56,15 +59,15 @@ case "$cmd" in
     if tp="$(find_tui_python)"; then
       exec "$tp" -m agenticwisp.tui "$@"
     fi
-    echo "No Python with 'textual' found." >&2
-    echo "  Install it:   python3 -m pip install textual   (or: pip install '.[tui]')" >&2
-    echo "  Or run the stdlib-only lamp:   wisp watch --simple" >&2
+    msg "No Python with 'textual' found." "找不到装了 textual 的 python。" >&2
+    msg "  Install it:   python3 -m pip install textual   (or: pip install '.[tui]')" "  安装:   python3 -m pip install textual   (或: pip install '.[tui]')" >&2
+    msg "  Or run the stdlib-only lamp:   wisp watch --simple" "  或用纯 stdlib 的简易灯:   wisp watch --simple" >&2
     exit 1
     ;;
   install-hooks)
     exec "$PY" -m agenticwisp.install_hooks "$HERE/bin/wisp" "$@"
     ;;
   *)
-    echo "usage: wisp {up|down|status|signal <event>|watch [--simple]|install-hooks}"
+    msg "usage: wisp {up|down|status|signal <event>|watch [--simple]|install-hooks}" "用法: wisp {up|down|status|signal <event>|watch [--simple]|install-hooks}"
     exit 1 ;;
 esac

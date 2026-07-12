@@ -10,6 +10,7 @@ from agenticwisp.page import render_page
 from agenticwisp import roster
 from agenticwisp import usage
 from agenticwisp import pricing
+from agenticwisp import i18n
 
 DEFAULT_PORT = 9099
 SUBAGENT_TTL = 90.0  # 秒:子agent 超此未更新即视为结束(防 SubagentStop 漏)
@@ -361,7 +362,7 @@ def serve(port=DEFAULT_PORT, store=None, sessions_dir="~/.claude/sessions", trac
 def main():
     port = int(os.environ.get("WISP_PORT", DEFAULT_PORT))
     httpd, _ = serve(port)
-    print(f"AgenticWisp 状态中枢监听 127.0.0.1:{port}(Ctrl-C 退出)")
+    print(i18n.t("hub.listening", port=port))
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
