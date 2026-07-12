@@ -26,11 +26,12 @@ class SessionStore:
     def _ensure(self, sid):
         s = self._sessions.get(sid)
         if s is None:
-            s = {"state": protocol.IDLE, "tool": None, "updated_at": 0.0, "subagents": {}}
+            s = {"state": protocol.IDLE, "tool": None, "effort": None,
+                 "updated_at": 0.0, "subagents": {}}
             self._sessions[sid] = s
         return s
 
-    def update(self, session_id, state, tool=None, now=None):
+    def update(self, session_id, state, tool=None, effort=None, now=None):
         norm = protocol.normalize(state)
         if norm is None:
             return None
@@ -38,10 +39,13 @@ class SessionStore:
         with self._lock:
             s = self._ensure(sid)
             s["state"], s["tool"] = norm, (tool if norm == protocol.TOOL else None)
+            if effort is not None:
+                s["effort"] = effort
             s["updated_at"] = now if now is not None else time.time()
         return norm
 
-    def update_subagent(self, session_id, agent_id, state, tool=None, agent_type=None, now=None):
+    def update_subagent(self, session_id, agent_id, state, tool=None, agent_type=None,
+                        effort=None, now=None):
         norm = protocol.normalize(state)
         if norm is None or not agent_id:
             return None
@@ -51,6 +55,8 @@ class SessionStore:
             sub = s["subagents"].get(agent_id, {})
             sub["state"], sub["tool"] = norm, (tool if norm == protocol.TOOL else None)
             sub["type"] = agent_type or sub.get("type") or "agent"
+            if effort is not None:
+                sub["effort"] = effort
             sub["updated_at"] = now if now is not None else time.time()
             s["subagents"][agent_id] = sub
         return norm
@@ -65,6 +71,7 @@ class SessionStore:
     def snapshot(self):
         with self._lock:
             return {sid: {"state": v["state"], "tool": v.get("tool"),
+                          "effort": v.get("effort"),
                           "updated_at": v.get("updated_at", 0.0),
                           "subagents": {aid: dict(sub)
                                         for aid, sub in v.get("subagents", {}).items()}}
@@ -95,12 +102,14 @@ class UsageTracker:
         self._projects_dir = projects_dir
         self._min = min_interval
         self._lock = threading.Lock()
-        self._st = {}   # sid -> {path, offset, last_read, detail}
+        self._st = {}    # sid -> {path, offset, last_read, detail, last}
+        self._sub = {}   # f"{parent}\x00{aid}" -> {path, offset, last_read, last}
 
     def _ensure(self, sid):
         e = self._st.get(sid)
         if e is None:
-            e = {"path": None, "offset": 0, "last_read": -1e9, "detail": _empty_detail()}
+            e = {"path": None, "offset": 0, "last_read": -1e9,
+                 "detail": _empty_detail(), "last": None}
             self._st[sid] = e
         return e
 
@@ -119,6 +128,10 @@ class UsageTracker:
         if new_off < old:                    # 截断/轮转:detail 清零重算
             e["detail"] = _empty_detail()
         _merge_detail(e["detail"], delta)
+        if new_off < old:
+            e["last"] = None
+        if delta.get("last"):
+            e["last"] = delta["last"]
         e["offset"] = new_off
         return e
 
@@ -131,6 +144,40 @@ class UsageTracker:
             if e["path"] is None:
                 return None
             return _detail_total(e["detail"])
+
+    def model_ctx_for(self, session_id, now=None):
+        if not session_id:
+            return (None, None)
+        now = now if now is not None else time.time()
+        with self._lock:
+            e = self._refresh(session_id, now)
+            last = e["last"]
+        return (last["model"], last["ctx"]) if last else (None, None)
+
+    def subagent_model_ctx(self, parent_sid, agent_id, now=None):
+        if not parent_sid or not agent_id:
+            return (None, None)
+        now = now if now is not None else time.time()
+        key = parent_sid + "\x00" + agent_id
+        with self._lock:
+            e = self._sub.get(key)
+            if e is None:
+                e = {"path": None, "offset": 0, "last_read": -1e9, "last": None}
+                self._sub[key] = e
+            if now - e["last_read"] >= self._min:
+                e["last_read"] = now
+                if e["path"] is None:
+                    e["path"] = usage.find_subagent_transcript(parent_sid, agent_id, self._projects_dir)
+                if e["path"]:
+                    old = e["offset"]
+                    delta, new_off = usage.scan_usage_detailed(e["path"], e["offset"])
+                    if new_off < old:
+                        e["last"] = None
+                    if delta.get("last"):
+                        e["last"] = delta["last"]
+                    e["offset"] = new_off
+            last = e["last"]
+        return (last["model"], last["ctx"]) if last else (None, None)
 
     def aggregate(self, session_ids, now=None):
         """全局聚合给定活 session 的用量 + 成本。"""
@@ -163,12 +210,15 @@ class UsageTracker:
             self._st.pop(session_id, None)
 
     def prune(self, live_ids):
-        """Drops any _st entry whose session_id is not in the given live set."""
+        """Drops _st / _sub entries whose (parent) session_id is not in the given live set."""
         keep = set(live_ids)
         with self._lock:
             for sid in list(self._st):
                 if sid not in keep:
                     del self._st[sid]
+            for key in list(self._sub):
+                if key.split("\x00", 1)[0] not in keep:
+                    del self._sub[key]
 
 
 def _active_subagents(detail, now, ttl):
@@ -176,7 +226,8 @@ def _active_subagents(detail, now, ttl):
     for aid, sub in (detail.get("subagents") or {}).items():
         if now - sub.get("updated_at", 0.0) <= ttl:
             out.append({"id": aid, "type": sub.get("type", "agent"),
-                        "state": sub["state"], "tool": sub.get("tool")})
+                        "state": sub["state"], "tool": sub.get("tool"),
+                        "effort": sub.get("effort")})
     return out
 
 
@@ -194,7 +245,8 @@ def build_sessions(roster_map, store_snapshot, now=None, ttl=SUBAGENT_TTL):
             state = protocol.THINKING if meta.get("status") == "busy" else protocol.IDLE
             tool, subs = None, []
         row = {"id": sid, "name": meta.get("name", sid[:8]), "cwd": meta.get("cwd", ""),
-               "state": state, "tool": tool}
+               "state": state, "tool": tool,
+               "effort": detail.get("effort") if detail else None}
         if subs:                       # 只在有子agent时加键,避免打破已有精确断言测试
             row["subagents"] = subs
         out.append(row)
@@ -202,7 +254,8 @@ def build_sessions(roster_map, store_snapshot, now=None, ttl=SUBAGENT_TTL):
         for sid, detail in store_snapshot.items():
             subs = _active_subagents(detail, now, ttl)
             row = {"id": sid, "name": sid[:8], "cwd": "",
-                   "state": detail["state"], "tool": detail.get("tool")}
+                   "state": detail["state"], "tool": detail.get("tool"),
+                   "effort": detail.get("effort")}
             if subs:
                 row["subagents"] = subs
             out.append(row)
@@ -237,6 +290,15 @@ def make_handler(store, sessions_dir="~/.claude/sessions", tracker=None):
             now = time.time()
             for row in rows:
                 row["tokens"] = tracker.tokens_for(row["id"], now)
+                model, ctx = tracker.model_ctx_for(row["id"], now)
+                row["model"] = model
+                row["ctx_used"] = ctx
+                row["ctx_max"] = pricing.max_context(model) if model else None
+                for sub in row.get("subagents", []):
+                    m, c = tracker.subagent_model_ctx(row["id"], sub["id"], now)
+                    sub["model"] = m
+                    sub["ctx_used"] = c
+                    sub["ctx_max"] = pricing.max_context(m) if m else None
             tracker.prune(row["id"] for row in rows)
             return rows
 
@@ -276,9 +338,11 @@ def make_handler(store, sessions_dir="~/.claude/sessions", tracker=None):
                 return
             if aid:
                 result = store.update_subagent(sid, aid, payload.get("state"),
-                                                payload.get("tool"), payload.get("agent_type"))
+                                                payload.get("tool"), payload.get("agent_type"),
+                                                payload.get("effort"))
             else:
-                result = store.update(sid, payload.get("state"), payload.get("tool"))
+                result = store.update(sid, payload.get("state"), payload.get("tool"),
+                                      payload.get("effort"))
             if result is None:
                 self._send(400, "invalid state")
             else:

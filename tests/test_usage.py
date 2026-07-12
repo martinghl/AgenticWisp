@@ -132,4 +132,37 @@ class ScanDetailedTest(unittest.TestCase):
         self.assertEqual(detail["models"]["unknown"], {"in": 7, "out": 0, "cr": 0, "cc": 0, "turns": 1})
 
     def test_missing_file(self):
-        self.assertEqual(usage.scan_usage_detailed("/no/such.jsonl", 0), ({"models": {}, "web_search": 0, "web_fetch": 0}, 0))
+        self.assertEqual(usage.scan_usage_detailed("/no/such.jsonl", 0), ({"models": {}, "web_search": 0, "web_fetch": 0, "last": None}, 0))
+
+
+class SubagentAndLastTest(unittest.TestCase):
+    def setUp(self):
+        self.base = tempfile.mkdtemp()
+
+    def _write(self, path, lines):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            for m, inp, cr, cc in lines:
+                f.write(json.dumps({"message": {"model": m, "usage": {
+                    "input_tokens": inp, "cache_read_input_tokens": cr,
+                    "cache_creation_input_tokens": cc}}}) + "\n")
+
+    def test_find_subagent_transcript(self):
+        p = os.path.join(self.base, "-data-x", "sid1", "subagents", "agent-aid9.jsonl")
+        os.makedirs(os.path.dirname(p))
+        open(p, "w").close()
+        self.assertEqual(usage.find_subagent_transcript("sid1", "aid9", self.base), p)
+        self.assertIsNone(usage.find_subagent_transcript("sid1", "nope", self.base))
+
+    def test_scan_returns_last_model_ctx(self):
+        p = os.path.join(self.base, "t.jsonl")
+        self._write(p, [("claude-opus-4-8", 100, 200, 0), ("claude-haiku-4-5", 5, 10, 3)])
+        detail, off = usage.scan_usage_detailed(p, 0)
+        self.assertEqual(detail["last"], {"model": "claude-haiku-4-5", "ctx": 18})  # 5+10+3
+
+    def test_scan_no_usage_last_none(self):
+        p = os.path.join(self.base, "e.jsonl")
+        with open(p, "w") as f:
+            f.write("not json\n")
+        detail, _ = usage.scan_usage_detailed(p, 0)
+        self.assertIsNone(detail["last"])

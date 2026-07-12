@@ -51,6 +51,19 @@ class SignalNoHubTest(unittest.TestCase):
             del os.environ["WISP_PORT"]
 
 
+class EffortTest(unittest.TestCase):
+    def test_reads_effort_level(self):
+        import io
+        ctx = read_stdin_context(io.StringIO(json.dumps({
+            "session_id": "s1", "tool_name": "Bash", "effort": {"level": "max"}})))
+        self.assertEqual(ctx["effort"], "max")
+
+    def test_effort_absent(self):
+        import io
+        ctx = read_stdin_context(io.StringIO(json.dumps({"session_id": "s1"})))
+        self.assertIsNone(ctx.get("effort"))
+
+
 class SignalWithHubTest(unittest.TestCase):
     def setUp(self):
         self.tmp = __import__("tempfile").mkdtemp()

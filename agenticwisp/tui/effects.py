@@ -1,7 +1,8 @@
 """Reactor Core 动画数学:纯函数,零依赖,便于单测。"""
 import math
 
-from agenticwisp.tui.render import state_hex, breathe_period, brightness  # noqa: F401
+from agenticwisp.tui.render import breathe_period, brightness  # noqa: F401
+from agenticwisp import palette
 
 
 def _to_rgb(color):
@@ -100,28 +101,44 @@ def _place_lines(grid, w, h, lines, color):
 
 
 def compose_core(w, h, state, t, from_state=None, trans_p=1.0, fancy=True):
-    """产出 h×w 字符网格,每格 [char, fg|None, bg]。"""
+    """产出 h×w 字符网格,每格 [char, fg|None, bg]。赛博朋克:霓虹等离子 + 数据雨 + 扫描线 + glitch + HUD 标题。"""
     if from_state is not None and trans_p < 1.0:
-        base = transition_color(state_hex(from_state), state_hex(state), trans_p)
+        base = transition_color(palette.state_hex(from_state), palette.state_hex(state), trans_p)
     else:
-        base = state_hex(state)
+        base = palette.state_hex(state)
     breath = brightness(t, breathe_period(state))
     field = plasma_field(w, h, t) if fancy else None
+    rain = datarain(w, h, t) if fancy else None
     grid = []
     for y in range(h):
         row = []
+        sl = scanline(y, h, t) if fancy else 1.0
         for x in range(w):
-            k = (0.35 + 0.65 * field[y][x]) if fancy else 0.6
-            row.append([" ", None, shade(base, k * breath)])
+            k = (0.30 + 0.55 * field[y][x]) if fancy else 0.6
+            bg = shade(base, min(1.0, k * breath * sl))
+            ch, fg = " ", None
+            if rain is not None:
+                rch, rb = rain[y][x]
+                if rch != " " and rb > 0.15:
+                    ch = rch
+                    fg = shade(palette.CYAN, 0.25 + 0.35 * rb)   # 暗青雨字
+            row.append([ch, fg, bg])
         grid.append(row)
-    if fancy:
-        for (px, py, ch, inten) in particles(t, 10, w, h):
-            spark = shade(base, min(1.0, 0.85 + 0.3 * inten))
-            fg = (min(255, spark[0] + 110), min(255, spark[1] + 110), min(255, spark[2] + 110))
-            grid[py][px] = [ch, fg, grid[py][px][2]]
+    # HUD 标题(顶行居中,全角 + 棱形括号,微 glitch)
+    title = glitch(hud_title(state.upper() if state else "REACTOR"), t, rate=0.05) if fancy \
+        else hud_title(state or "REACTOR")
+    # HUD 标题放最上一行(不居中),边界检查针对实际网格
+    if grid:
+        x0 = max(0, (w - len(title)) // 2)
+        for j, ch in enumerate(title):
+            x = x0 + j
+            if ch != " " and 0 <= x < w:
+                grid[0][x] = [ch, _WHITE, grid[0][x][2]]
+    # 中央大字 banner(走 glitch)
     eng, _zh = banner(state)
-    rule = "─" * len(eng)
-    _place_lines(grid, w, h, [rule, eng, rule], _WHITE)
+    eng2 = glitch(eng, t, rate=0.06) if fancy else eng
+    rule = "─" * len(eng2)
+    _place_lines(grid, w, h, [rule, eng2, rule], _WHITE)
     return grid
 
 
@@ -141,5 +158,103 @@ def heartbeat(state, t, width=12, phase=0.0, pulse=0.0):
     out = []
     for x in range(width):
         level = base + pulse * 2.5 + amp * math.sin(x * 0.9 + t * speed + phase)
+        out.append(_BLOCKS[max(0, min(8, int(round(level))))])
+    return "".join(out)
+
+
+def _fullwidth(s):
+    out = []
+    for ch in s.upper():
+        o = ord(ch)
+        if ch == " ":
+            out.append("　")
+        elif 0x21 <= o <= 0x7e:
+            out.append(chr(o + 0xFEE0))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def hud_title(s):
+    """全角化 + 棱形括号:'usage' → '【 ＵＳＡＧＥ 】'。"""
+    return "【 " + _fullwidth(s) + " 】"
+
+
+def gauge(frac, width=8):
+    """霓虹迷你仪表:█ 填充 / ░ 空;返回 (str, 色阶色)。None/越界安全。"""
+    f = 0.0 if frac is None else max(0.0, min(1.0, frac))
+    n = max(0, min(width, int(round(f * width))))
+    return "█" * n + "░" * (width - n), palette.ctx_color(frac)
+
+
+def scanline(row_idx, h, t):
+    """扫描线亮度系数:一条随 t 缓慢下移的亮行提亮(>1)+ 奇数行轻压暗。"""
+    if h <= 0:
+        return 1.0
+    pos = (t * 3.0) % h
+    d = min(abs(row_idx - pos), h - abs(row_idx - pos))
+    bright = 1.0 + 0.6 * max(0.0, 1.0 - d)
+    alt = 0.92 if (row_idx % 2 == 1) else 1.0
+    return bright * alt
+
+
+_GLITCH_GLYPHS = "▓▒░#%&01"
+
+
+def glitch(s, t, rate=0.08):
+    """偶发字符替换(确定性:由 t 量化 tick 与位置决定);多数帧近乎原样。"""
+    tick = int(t * 6)
+    out = []
+    for i, ch in enumerate(s):
+        if ch != " " and ((tick * 2654435761 + i * 40503) % 997) / 997.0 < rate:
+            out.append(_GLITCH_GLYPHS[(tick + i) % len(_GLITCH_GLYPHS)])
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+_KANA = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ01"
+
+
+def datarain(w, h, t):
+    """暗背景数据雨:每列一个下落头(半角片假名),亮头暗尾。返回 h×w 的 [(char, bright)]。"""
+    grid = [[(" ", 0.0) for _ in range(w)] for _ in range(h)]
+    for x in range(w):
+        speed = 2.0 + (x * 7 % 5)
+        length = 3 + (x * 13 % 4)
+        head = (t * speed + x * 3) % (h + length)
+        for k in range(length):
+            y = int(head) - k
+            if 0 <= y < h:
+                b = max(0.0, 1.0 - k / float(length))
+                ch = _KANA[(x * 31 + int(head) - k) % len(_KANA)]
+                grid[y][x] = (ch, b)
+    return grid
+
+
+def energybar(frac, width, t, color=None):
+    """霓虹能量条:填充段 █(带一段流动高光 PALE)+ 暗轨 ░。返回 [(char, hex)]。"""
+    f = 0.0 if frac is None else max(0.0, min(1.0, frac))
+    n = max(0, min(width, int(round(f * width))))
+    color = color or palette.MAGENTA
+    hi = int((t * 6) % max(1, width))
+    out = []
+    for i in range(width):
+        if i < n:
+            out.append(("█", palette.PALE if i == hi else color))
+        else:
+            out.append(("░", palette.RAIL))
+    return out
+
+
+def neon_pulse(state, t, width=12, phase=0.0, pulse=0.0):
+    """霓虹数据脉冲心跳:一个亮头顺条流动 + 渐暗拖尾 + 基线;pulse(token涌动)抬高。"""
+    base, amp, speed = _BEAT.get(state, _BEAT["idle"])
+    head = (t * speed + phase) % width
+    out = []
+    for x in range(width):
+        d = min(abs(x - head), width - abs(x - head))
+        wave = amp * max(0.0, 1.0 - d / 3.0)
+        level = base * 0.6 + pulse * 2.5 + wave * 1.5
         out.append(_BLOCKS[max(0, min(8, int(round(level))))])
     return "".join(out)

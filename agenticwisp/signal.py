@@ -11,7 +11,7 @@ DEFAULT_TIMEOUT = 0.3  # 秒。极短:连不上立刻放弃
 
 
 def read_stdin_context(stream):
-    """从钩子 stdin 的 JSON 读 {session_id, tool, agent_id, agent_type};任何问题返回 {}。"""
+    """从钩子 stdin 的 JSON 读 {session_id, tool, agent_id, agent_type, effort};任何问题返回 {}。"""
     try:
         raw = stream.read()
         if not raw or not raw.strip():
@@ -19,8 +19,11 @@ def read_stdin_context(stream):
         d = json.loads(raw)
         if not isinstance(d, dict):
             return {}
+        eff = d.get("effort")
+        effort = eff.get("level") if isinstance(eff, dict) else None
         return {"session_id": d.get("session_id"), "tool": d.get("tool_name"),
-                "agent_id": d.get("agent_id"), "agent_type": d.get("agent_type")}
+                "agent_id": d.get("agent_id"), "agent_type": d.get("agent_type"),
+                "effort": effort}
     except Exception:
         return {}
 
@@ -79,6 +82,8 @@ def main(argv=None):
         if state is None:
             return 0
         body = {"session_id": sid, "state": state, "tool": ctx.get("tool")}
+        if ctx.get("effort"):
+            body["effort"] = ctx.get("effort")
         if aid:
             body["agent_id"] = aid
             if ctx.get("agent_type"):

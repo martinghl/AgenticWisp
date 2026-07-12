@@ -20,3 +20,12 @@ class PricingTest(unittest.TestCase):
 
     def test_synthetic_and_zero(self):
         self.assertEqual(pricing.cost("<synthetic>", 0, 0, 0, 0), 0.0)
+
+
+class MaxContextTest(unittest.TestCase):
+    def test_max_context(self):
+        self.assertEqual(pricing.max_context("claude-opus-4-8"), 1_000_000)
+        self.assertEqual(pricing.max_context("claude-sonnet-5"), 1_000_000)
+        self.assertEqual(pricing.max_context("claude-haiku-4-5"), 200_000)
+        self.assertEqual(pricing.max_context("claude-opus-4-8-20250101"), 1_000_000)  # 前缀
+        self.assertEqual(pricing.max_context("gpt-4"), 1_000_000)                     # default

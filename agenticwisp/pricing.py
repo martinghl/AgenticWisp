@@ -30,3 +30,24 @@ def cost(model, inp, out, cr, cc):
     cr=cache_read(便宜 0.1x),cc=cache_creation/写缓存(1.25x)。"""
     pi, po = rate(model)
     return (inp * pi + out * po + cr * pi * 0.1 + cc * pi * 1.25) / 1e6
+
+
+# 各模型最大上下文窗口(token)
+MAX_CONTEXT = {
+    "claude-opus-4-8": 1_000_000, "claude-opus-4-7": 1_000_000,
+    "claude-opus-4-6": 1_000_000, "claude-opus-4-5": 1_000_000,
+    "claude-sonnet-5": 1_000_000, "claude-sonnet-4-6": 1_000_000,
+    "claude-fable-5": 1_000_000, "claude-mythos-5": 1_000_000,
+    "claude-haiku-4-5": 200_000,
+}
+DEFAULT_MAX_CONTEXT = 1_000_000
+
+
+def max_context(model):
+    """模型最大上下文窗口(token);精确→前缀→default。"""
+    if model in MAX_CONTEXT:
+        return MAX_CONTEXT[model]
+    for k, v in MAX_CONTEXT.items():
+        if model and model.startswith(k):
+            return v
+    return DEFAULT_MAX_CONTEXT

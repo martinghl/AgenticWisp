@@ -24,6 +24,16 @@ def find_transcript(session_id, projects_dir="~/.claude/projects"):
     return hits[0] if hits else None
 
 
+def find_subagent_transcript(parent_sid, agent_id, projects_dir="~/.claude/projects"):
+    """glob <projects_dir>/*/<parent_sid>/subagents/agent-<agent_id>.jsonl;命中返首个,否则 None。"""
+    if not parent_sid or not agent_id:
+        return None
+    base = os.path.expanduser(projects_dir)
+    hits = glob.glob(os.path.join(base, "*", glob.escape(parent_sid),
+                                  "subagents", "agent-" + glob.escape(agent_id) + ".jsonl"))
+    return hits[0] if hits else None
+
+
 def _line_tokens(raw):
     try:
         d = json.loads(raw)
@@ -89,10 +99,11 @@ def _line_detail(raw):
 
 
 def scan_usage_detailed(path, offset):
-    """从 offset 读新增完整行,按模型累加明细 + web计数。返回 (detail, 新offset)。"""
+    """从 offset 读新增完整行,按模型累加明细 + web计数 + 记最近一轮 model/ctx。返回 (detail, 新offset)。"""
     lines, new_off = _read_new_complete(path, offset)
     models = {}
     ws_total = wf_total = 0
+    last = None
     for r in lines:
         parsed = _line_detail(r.decode("utf-8", "replace"))
         if parsed is None:
@@ -104,4 +115,5 @@ def scan_usage_detailed(path, offset):
         m["turns"] += 1
         ws_total += ws
         wf_total += wf
-    return ({"models": models, "web_search": ws_total, "web_fetch": wf_total}, new_off)
+        last = {"model": model, "ctx": comp["in"] + comp["cr"] + comp["cc"]}
+    return ({"models": models, "web_search": ws_total, "web_fetch": wf_total, "last": last}, new_off)

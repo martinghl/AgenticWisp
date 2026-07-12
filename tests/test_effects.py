@@ -1,6 +1,7 @@
 import unittest
 
 from agenticwisp.tui import effects
+from agenticwisp import palette
 
 
 class ColorFieldTest(unittest.TestCase):
@@ -80,13 +81,16 @@ class ComposeCoreTest(unittest.TestCase):
         self.assertEqual(len(bg), 3)  # bg 必为 rgb 三元组
 
     def test_banner_text_present(self):
+        # 霓虹版 banner 走 glitch(确定性、偶发字符替换),故按实际 glitch 结果比对,
+        # 而非逐字符断言原始 ASCII(旧版无 glitch 时才成立)。
         grid = effects.compose_core(40, 9, "tool", 0.0)
         flat = self._flat(grid)
-        for c in "TOOL":
-            self.assertIn(c, flat)
+        eng, _zh = effects.banner("tool")
+        expected = effects.glitch(eng, 0.0, rate=0.06)
+        self.assertIn(expected, flat)
 
     def test_bg_uses_state_hue(self):
-        # tool 是紫(#8b5cf6:r,b 高于 g);取一个非大字格的底色验证色相
+        # tool 是霓虹品红(palette.state_hex=MAGENTA #ea00d9:r,b 高于 g);取一个非大字格的底色验证色相
         grid = effects.compose_core(40, 9, "tool", 0.3)
         _, _, bg = grid[0][0]
         self.assertGreater(bg[0], bg[1])   # r > g
@@ -131,6 +135,89 @@ class HeartbeatTest(unittest.TestCase):
 
     def test_unknown_state_ok(self):
         self.assertEqual(len(effects.heartbeat("bogus", 1.0, 12)), 12)
+
+
+class NeonHelpersTest(unittest.TestCase):
+    def test_hud_title(self):
+        self.assertEqual(effects.hud_title("usage"), "【 ＵＳＡＧＥ 】")
+
+    def test_gauge(self):
+        bar, color = effects.gauge(0.71, 8)
+        self.assertEqual(len(bar), 8)
+        self.assertEqual(bar.count("█"), 6)   # round(0.71*8)=6
+        self.assertEqual(color, palette.AMBER)
+        self.assertEqual(effects.gauge(0.0, 8)[0], "░" * 8)
+        self.assertEqual(effects.gauge(1.0, 8)[0], "█" * 8)
+        self.assertEqual(effects.gauge(None, 8)[0], "░" * 8)
+
+    def test_scanline(self):
+        # 亮线附近提亮(>1),远处奇数行轻压暗(<1)
+        self.assertGreater(effects.scanline(0, 10, 0.0), 1.0)
+        self.assertLessEqual(effects.scanline(5, 10, 0.0), 1.0)
+        # 确定性
+        self.assertEqual(effects.scanline(3, 10, 1.5), effects.scanline(3, 10, 1.5))
+
+    def test_glitch(self):
+        s = "HELLO WORLD"
+        self.assertEqual(effects.glitch(s, 1.0, rate=0.0), s)     # rate 0 → 原样
+        g = effects.glitch(s, 1.0, rate=1.0)
+        self.assertEqual(len(g), len(s))                          # 长度不变
+        self.assertEqual(g, effects.glitch(s, 1.0, rate=1.0))     # 确定性
+
+
+class NeonAnimTest(unittest.TestCase):
+    def test_datarain_shape_deterministic(self):
+        g = effects.datarain(6, 4, 1.0)
+        self.assertEqual(len(g), 4)
+        self.assertTrue(all(len(row) == 6 for row in g))
+        self.assertEqual(g, effects.datarain(6, 4, 1.0))          # 确定性
+        # 至少有一格非空(有雨点)
+        self.assertTrue(any(ch != " " for row in g for (ch, _b) in row))
+
+    def test_energybar(self):
+        bar = effects.energybar(0.5, 10, 0.0, color=palette.MAGENTA)
+        self.assertEqual(len(bar), 10)
+        self.assertEqual(sum(1 for ch, _c in bar if ch == "█"), 5)  # round(0.5*10)=5
+        # 空段是暗轨
+        self.assertTrue(all(c == palette.RAIL for ch, c in bar if ch == "░"))
+
+    def test_neon_pulse(self):
+        p = effects.neon_pulse("tool", 0.0, width=12)
+        self.assertEqual(len(p), 12)
+        self.assertEqual(p, effects.neon_pulse("tool", 0.0, width=12))  # 确定性
+        # pulse 抬高整体
+        hi = effects.neon_pulse("idle", 0.0, width=12, pulse=1.0)
+        lo = effects.neon_pulse("idle", 0.0, width=12, pulse=0.0)
+        self.assertGreaterEqual(sum(map(ord, hi)), sum(map(ord, lo)))
+
+
+class ReactorNeonTest(unittest.TestCase):
+    def test_compose_core_neon_shape(self):
+        grid = effects.compose_core(30, 8, "tool", 1.0)
+        self.assertEqual(len(grid), 8)
+        self.assertTrue(all(len(r) == 30 for r in grid))
+        # 每格结构 [char, fg|None, bg-rgb-tuple]
+        ch, fg, bg = grid[0][0]
+        self.assertIsInstance(bg, tuple)
+        self.assertEqual(len(bg), 3)
+        # 霓虹:出现过品红系(tool=MAGENTA)分量——某格 bg 的 R 明显>0 且 B 明显>0
+        self.assertTrue(any(g[2][0] > 40 and g[2][2] > 40 for row in grid for g in row))
+        # 顶部某处含全角 HUD 标题的棱形括号
+        joined = "".join(g[0] for row in grid for g in row)
+        self.assertIn("【", joined)
+
+    def test_compose_core_deterministic(self):
+        self.assertEqual(effects.compose_core(20, 6, "idle", 2.0),
+                         effects.compose_core(20, 6, "idle", 2.0))
+
+    def test_compose_core_small_height_no_crash(self):
+        # h=1 不应崩(HUD 标题边界检查针对实际网格)
+        grid = effects.compose_core(20, 1, "tool", 0.0)
+        self.assertEqual(len(grid), 1)
+        self.assertEqual(len(grid[0]), 20)
+        # fancy=False 路径也安全
+        grid2 = effects.compose_core(20, 1, "tool", 0.0, fancy=False)
+        self.assertEqual(len(grid2), 1)
 
 
 if __name__ == "__main__":

@@ -31,7 +31,12 @@ class TuiAppTest(unittest.TestCase):
         _os.makedirs(proj, exist_ok=True)
         with open(_os.path.join(proj, sid + ".jsonl"), mode) as f:
             for u in usages:
-                f.write(_json.dumps({"message": {"usage": u}}) + "\n")
+                u = dict(u)
+                model = u.pop("model", None)
+                msg = {"usage": u}
+                if model is not None:
+                    msg["model"] = model
+                f.write(_json.dumps({"message": msg}) + "\n")
 
     def tearDown(self):
         self.httpd.shutdown()
@@ -93,8 +98,8 @@ class TuiAppTest(unittest.TestCase):
                 self.assertIn("time", labels)
                 self.assertIn("token", labels)
                 row = table.get_row("s1")
-                self.assertEqual(str(row[7]), "120k")     # token 列(第 8 列,索引7)
-                self.assertTrue(str(row[6]))               # time 列非空
+                self.assertEqual(str(row[8]), "120k")     # token 列(第 9 列,索引8)
+                self.assertTrue(str(row[7]))               # time 列非空
 
                 # 证明 animate_heartbeats 更新了 time 列(不仅是 refresh_state):
                 # 将上次变化时间设为 ~1h 前,然后单独调用 animate_heartbeats,
@@ -102,7 +107,7 @@ class TuiAppTest(unittest.TestCase):
                 app._last_change["s1"] -= 3700  # 假装该状态已持续 ~1h
                 app.animate_heartbeats(); await pilot.pause()
                 row_updated = table.get_row("s1")
-                time_str = str(row_updated[6])
+                time_str = str(row_updated[7])
                 self.assertTrue(time_str.startswith("1h"),
                                f"Expected time to start with '1h', got '{time_str}'")
         import asyncio
@@ -119,8 +124,8 @@ class TuiAppTest(unittest.TestCase):
                 table = app.query_one("#table")
                 # 子行的 row_key 格式为 "s1\x00a1"
                 sub_row = table.get_row("s1\x00a1")
-                self.assertEqual(str(sub_row[7]), "—",
-                                f"Expected sub-row token to be '—', got '{str(sub_row[7])}'")
+                self.assertEqual(str(sub_row[8]), "—",
+                                f"Expected sub-row token to be '—', got '{str(sub_row[8])}'")
         import asyncio
         asyncio.run(run())
 
@@ -156,26 +161,50 @@ class TuiAppTest(unittest.TestCase):
                 "input_tokens": inp, "output_tokens": out,
                 "cache_read_input_tokens": cr, "cache_creation_input_tokens": cc}}}) + "\n")
 
-    def test_dashboard_panel_renders(self):
+    def test_usage_hud_renders(self):
         self.store.update("s1", "tool", "Bash")
-        self._write_usage_line("s1", "claude-opus-4-8", inp=300000, out=12000)
+        self._write_transcript("s1", [{"model": "claude-opus-4-8", "input_tokens": 300000,
+                                       "output_tokens": 12000, "cache_read_input_tokens": 0,
+                                       "cache_creation_input_tokens": 0}])
         app = WispApp(host="127.0.0.1", port=self.port)
         async def run():
             async with app.run_test() as pilot:
                 app.refresh_state(); await pilot.pause()
                 panel = app.query_one("#dash")
-                txt = panel.renderable
-                s = txt.plain if hasattr(txt, "plain") else str(txt)
+                s = panel.renderable.plain if hasattr(panel.renderable, "plain") else str(panel.renderable)
                 self.assertIn("USAGE", s)
-                self.assertIn("cost", s)
+                self.assertIn("$", s)
                 self.assertIn("opus-4-8", s)
         import asyncio
         asyncio.run(run())
 
-    def test_dashboard_panel_placeholder(self):
-        # 无数据时 _render 返回占位文本(纯方法,不需挂载)
-        from agenticwisp.tui.app import DashboardPanel
-        self.assertIn("等待", DashboardPanel()._render().plain)
+    def test_usage_hud_placeholder(self):
+        from agenticwisp.tui.app import UsageHUD
+        self.assertIn("等待", UsageHUD()._render_text().plain)
+
+    def test_neon_row_columns(self):
+        self.store.update("s1", "tool", "Bash", effort="max")
+        self._write_transcript("s1", [{"model": "claude-opus-4-8",
+                                       "input_tokens": 700000,
+                                       "cache_read_input_tokens": 0,
+                                       "cache_creation_input_tokens": 0}])
+        app = WispApp(host="127.0.0.1", port=self.port)
+        async def run():
+            async with app.run_test() as pilot:
+                app.refresh_state(); await pilot.pause()
+                app.animate_heartbeats(); await pilot.pause()
+                table = app.query_one("#table")
+                labels = [str(c.label) for c in table.columns.values()]
+                self.assertIn("model", labels)
+                self.assertIn("effort", labels)
+                self.assertIn("ctx", labels)
+                self.assertNotIn("cwd", labels)
+                row = table.get_row("s1")
+                joined = " ".join(str(c) for c in row)
+                self.assertIn("opus-4-8", joined)
+                self.assertIn("max", joined)
+        import asyncio
+        asyncio.run(run())
 
 
 if __name__ == "__main__":

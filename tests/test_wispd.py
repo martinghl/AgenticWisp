@@ -16,7 +16,7 @@ class BuildSessionsTest(unittest.TestCase):
         snap = {"a": {"state": "tool", "tool": "Bash", "updated_at": 0}}
         rows = build_sessions(roster_map, snap)
         self.assertEqual(rows, [{"id": "a", "name": "Wisp", "cwd": "/data/gli9",
-                                 "state": "tool", "tool": "Bash"}])
+                                 "state": "tool", "tool": "Bash", "effort": None}])
 
     def test_roster_without_detail_uses_status(self):
         rows = build_sessions({"a": {"name": "X", "cwd": "/x", "status": "busy"}}, {})
@@ -164,7 +164,8 @@ class BuildSubagentsTest(unittest.TestCase):
         rows = build_sessions(roster, snap, now=100.0, ttl=90.0)
         subs = rows[0]["subagents"]
         self.assertEqual([x["id"] for x in subs], ["a1"])                # old 超 TTL 被丢
-        self.assertEqual(subs[0], {"id": "a1", "type": "Explore", "state": "tool", "tool": "Grep"})
+        self.assertEqual(subs[0], {"id": "a1", "type": "Explore", "state": "tool", "tool": "Grep",
+                                    "effort": None})
 
 
 class ToolNameClearedTest(unittest.TestCase):
@@ -321,6 +322,93 @@ class UsageEndpointTest(unittest.TestCase):
         self.assertAlmostEqual(agg["cost_usd"], 5.0)
         self.assertEqual(agg["sessions"], 1)
         self.assertEqual(agg["by_model"][0]["model"], "claude-opus-4-8")
+
+
+class EffortStoreTest(unittest.TestCase):
+    def test_session_effort_stored_and_preserved(self):
+        st = SessionStore()
+        st.update("s1", "tool", "Bash", effort="max")
+        self.assertEqual(st.snapshot()["s1"]["effort"], "max")
+        st.update("s1", "thinking")  # 无 effort → 保留
+        self.assertEqual(st.snapshot()["s1"]["effort"], "max")
+
+    def test_subagent_effort_stored(self):
+        st = SessionStore()
+        st.update_subagent("s1", "a1", "tool", tool="Grep", agent_type="Explore", effort="low")
+        self.assertEqual(st.snapshot()["s1"]["subagents"]["a1"]["effort"], "low")
+
+    def test_build_sessions_emits_effort(self):
+        roster_map = {"s1": {"name": "W", "cwd": "/x", "status": "busy"}}
+        st = SessionStore(); st.update("s1", "tool", "Bash", effort="high")
+        rows = build_sessions(roster_map, st.snapshot())
+        self.assertEqual(rows[0]["effort"], "high")
+
+
+class ModelCtxTrackerTest(unittest.TestCase):
+    def setUp(self):
+        self.base = tempfile.mkdtemp()
+        self.proj = os.path.join(self.base, "proj")
+        os.makedirs(self.proj)
+
+    def _line(self, model, inp=0, cr=0, cc=0):
+        return json.dumps({"message": {"model": model, "usage": {
+            "input_tokens": inp, "cache_read_input_tokens": cr,
+            "cache_creation_input_tokens": cc}}}) + "\n"
+
+    def test_session_model_ctx(self):
+        from agenticwisp.wispd import UsageTracker
+        with open(os.path.join(self.proj, "s1.jsonl"), "w") as f:
+            f.write(self._line("claude-opus-4-8", inp=100, cr=200))
+        tr = UsageTracker(self.base, min_interval=0.0)
+        self.assertEqual(tr.model_ctx_for("s1", now=100.0), ("claude-opus-4-8", 300))
+
+    def test_no_transcript_none(self):
+        from agenticwisp.wispd import UsageTracker
+        tr = UsageTracker(self.base, min_interval=0.0)
+        self.assertEqual(tr.model_ctx_for("ghost", now=100.0), (None, None))
+
+    def test_subagent_model_ctx(self):
+        from agenticwisp.wispd import UsageTracker
+        sub = os.path.join(self.proj, "s1", "subagents")
+        os.makedirs(sub)
+        with open(os.path.join(sub, "agent-a1.jsonl"), "w") as f:
+            f.write(self._line("claude-haiku-4-5", inp=10, cr=5, cc=1))
+        tr = UsageTracker(self.base, min_interval=0.0)
+        self.assertEqual(tr.subagent_model_ctx("s1", "a1", now=100.0), ("claude-haiku-4-5", 16))
+
+
+class SessionsModelCtxEndpointTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp_roster = tempfile.mkdtemp()
+        self.base = tempfile.mkdtemp()
+        self.proj = os.path.join(self.base, "proj")
+        os.makedirs(self.proj)
+        with open(os.path.join(self.proj, "s1.jsonl"), "w") as f:
+            f.write(json.dumps({"message": {"model": "claude-opus-4-8",
+                    "usage": {"input_tokens": 700000, "cache_read_input_tokens": 0,
+                              "cache_creation_input_tokens": 0}}}) + "\n")
+        from agenticwisp.wispd import UsageTracker
+        self.store = SessionStore()
+        self.tracker = UsageTracker(self.base, min_interval=0.0)
+        self.httpd, _ = serve(port=0, store=self.store,
+                              sessions_dir=self.tmp_roster, tracker=self.tracker)
+        self.port = self.httpd.server_address[1]
+        self.t = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.t.start()
+
+    def tearDown(self):
+        self.httpd.shutdown(); self.httpd.server_close()
+
+    def test_sessions_has_model_ctx_effort(self):
+        self.store.update("s1", "tool", "Bash", effort="max")
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2.0)
+        conn.request("GET", "/sessions")
+        rows = json.loads(conn.getresponse().read().decode()); conn.close()
+        row = next(r for r in rows if r["id"] == "s1")
+        self.assertEqual(row["model"], "claude-opus-4-8")
+        self.assertEqual(row["ctx_used"], 700000)
+        self.assertEqual(row["ctx_max"], 1_000_000)
+        self.assertEqual(row["effort"], "max")
 
 
 if __name__ == "__main__":
