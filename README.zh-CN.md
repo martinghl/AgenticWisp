@@ -7,6 +7,7 @@
 </p>
 
 <p align="center">
+  <a href="https://pypi.org/project/agenticwisp/"><img alt="PyPI" src="https://img.shields.io/pypi/v/agenticwisp?color=blueviolet"></a>
   <img alt="python" src="https://img.shields.io/badge/python-3.9%2B-blue">
   <img alt="platform" src="https://img.shields.io/badge/platform-Linux%20%C2%B7%20macOS%20%C2%B7%20WSL-informational">
   <img alt="core deps" src="https://img.shields.io/badge/core-stdlib%20only-brightgreen">
