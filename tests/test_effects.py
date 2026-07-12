@@ -263,6 +263,24 @@ class ReactorNeonTest(unittest.TestCase):
         block_rows = sum(1 for row in grid if "█" in "".join(c[0] for c in row))
         self.assertEqual(block_rows, 0, "窄屏应回退到小号 banner,不渲染大字")
 
+    def test_bigword_has_P_for_pending(self):
+        # PENDING 需要 P 字模
+        self.assertIn("P", effects._BIGFONT)
+        rows = effects.bigword("PENDING")
+        self.assertEqual(len(rows), 3)
+        self.assertTrue(all(len(r) == len(rows[0]) for r in rows))
+
+    def test_compose_core_waiting_is_red_pending(self):
+        # waiting(等用户)→ 红底 + 大字 PENDING(而非蓝色 WAITING)
+        grid = effects.compose_core(58, 11, "waiting", 0.0)
+        joined = "".join(g[0] for row in grid for g in row)
+        self.assertIn("PENDING", joined)          # 标题 // PENDING //
+        self.assertNotIn("WAITING", joined)
+        # 底色偏红:存在 R 明显 > G 且 R 明显 > B 的格子
+        self.assertTrue(any(g[2][0] > g[2][1] + 30 and g[2][0] > g[2][2] + 30
+                            for row in grid for g in row),
+                        "waiting reactor 底色应偏红")
+
     def test_compose_core_deterministic(self):
         self.assertEqual(effects.compose_core(20, 6, "idle", 2.0),
                          effects.compose_core(20, 6, "idle", 2.0))

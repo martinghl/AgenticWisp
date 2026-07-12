@@ -81,6 +81,7 @@ _BIGFONT = {
     "K": ["█▄▀", "██ ", "█▀▄"],
     "G": ["▄▀▀", "█ ▄", "▀▄▀"],
     "O": ["▄▀▄", "█ █", "▀▄▀"],
+    "P": ["█▀▄", "█▄▀", "█  "],
     "W": ["█   █", "█ ▄ █", "▀▄▀▄▀"],
     "A": ["▄▀▄", "█▀█", "█ █"],
     "R": ["█▀▄", "█▀▄", "█ █"],
@@ -134,7 +135,13 @@ def _place_lines(grid, w, h, lines, color):
 
 def compose_core(w, h, state, t, from_state=None, trans_p=1.0, fancy=True):
     """产出 h×w 字符网格,每格 [char, fg|None, bg]。赛博朋克:霓虹等离子 + 数据雨 + 扫描线 + glitch + HUD 标题。"""
-    if from_state is not None and trans_p < 1.0:
+    # waiting = Claude 在等你操作(问你/等审批)——最该看:整块红色警示 + 大字 "PENDING",
+    # 盖过平静的蓝。disp 是标题/大字用的显示词。
+    pending = (state == "waiting")
+    disp = "pending" if pending else state
+    if pending:
+        base = palette.PINK
+    elif from_state is not None and trans_p < 1.0:
         base = transition_color(palette.state_hex(from_state), palette.state_hex(state), trans_p)
     else:
         base = palette.state_hex(state)
@@ -159,7 +166,7 @@ def compose_core(w, h, state, t, from_state=None, trans_p=1.0, fancy=True):
     # HUD 标题(顶行,单宽 ASCII 标签):全角字符是双宽(占 2 终端列),
     # 放进"每格 1 列"的网格会让该行渲染得比 w 宽→终端折行、把下一行挤黑;
     # 故这里用单宽 "// STATE //"。(hud_title 的全角只用于 UsageHUD 的自由文本行。)
-    title = "// " + (state.upper() if state else "REACTOR") + " //"
+    title = "// " + (disp.upper() if disp else "REACTOR") + " //"
     # HUD 标题放最上一行(居中),边界检查针对实际网格;整段清掉背景数据雨,
     # 让标签读作干净的 "// STATE //"(空格也写成空位,只保留该格 bg)
     if grid:
@@ -169,7 +176,7 @@ def compose_core(w, h, state, t, from_state=None, trans_p=1.0, fancy=True):
             if 0 <= x < w:
                 grid[0][x] = [ch, (_WHITE if ch != " " else None), grid[0][x][2]]
     # 中央状态词:够宽够高时用 3 行半块大字符画;否则回退小号单行 banner。
-    big = bigword(state) if state else ["", "", ""]
+    big = bigword(disp) if disp else ["", "", ""]
     bw = len(big[0])
     has_glyph = any(c != " " for r in big for c in r)   # 未知状态字模全空→回退
     if h >= 7 and 0 < bw <= w and has_glyph:
@@ -182,7 +189,7 @@ def compose_core(w, h, state, t, from_state=None, trans_p=1.0, fancy=True):
                 grid[yy][xx] = [" ", None, grid[yy][xx][2]]
         _place_lines(grid, w, h, lines, _WHITE)
     else:
-        eng, _zh = banner(state)
+        eng, _zh = banner(disp)
         eng2 = glitch(eng, t, rate=0.06) if fancy else eng
         rule = "─" * len(eng2)
         _place_lines(grid, w, h, [rule, eng2, rule], _WHITE)

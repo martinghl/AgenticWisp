@@ -91,6 +91,15 @@ class SignalWithHubTest(unittest.TestCase):
         self._feed("PreToolUse", {"session_id": "s1", "tool_name": "Bash"})
         self.assertEqual(self.store.snapshot()["s1"]["state"], protocol.TOOL)
 
+    def test_ask_user_maps_to_waiting_not_tool(self):
+        # Claude 问用户(AskUserQuestion)经 PreToolUse 上报,但语义是"等你"→ waiting,不是 tool
+        self._feed("PreToolUse", {"session_id": "s1", "tool_name": "AskUserQuestion"})
+        self.assertEqual(self.store.snapshot()["s1"]["state"], protocol.WAITING)
+
+    def test_exit_plan_mode_maps_to_waiting(self):
+        self._feed("PreToolUse", {"session_id": "s1", "tool_name": "ExitPlanMode"})
+        self.assertEqual(self.store.snapshot()["s1"]["state"], protocol.WAITING)
+
     def test_subagent_event_updates_subagent(self):
         self._feed("PreToolUse", {"session_id": "s1", "agent_id": "a1",
                                   "agent_type": "Explore", "tool_name": "Grep"})

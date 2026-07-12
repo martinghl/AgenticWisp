@@ -29,6 +29,10 @@ DISPLAY = {
     ERROR:    {"label": "ERROR · 出错",    "rgb": (229, 72, 77),   "web": "#e5484d", "blink": True},
 }
 
+# 这些工具会"阻塞等用户操作"(Claude 在问你、等你答复/审批),语义上是 waiting 而非
+# tool——虽然它们经 PreToolUse 钩子上报。见 state_for_event。
+WAITING_TOOLS = frozenset({"AskUserQuestion", "ExitPlanMode"})
+
 # 聚合优先级:多个 session 状态取"最该看"的(高→低)
 PRIORITY = {IDLE: 0, THINKING: 1, TOOL: 2, ERROR: 3, WAITING: 4}
 
@@ -41,6 +45,14 @@ def normalize(value):
     if v in STATES:
         return v
     return HOOK_EVENT_TO_STATE.get(v)
+
+
+def state_for_event(event, tool=None):
+    """钩子事件→状态,但把"阻塞等用户"的工具(AskUserQuestion/ExitPlanMode)在 PreToolUse
+    时判为 waiting——否则它们会卡在 tool(紫),而其实 Claude 是在等你。其余照常 normalize。"""
+    if event == "PreToolUse" and tool in WAITING_TOOLS:
+        return WAITING
+    return normalize(event)
 
 
 def is_valid(value):

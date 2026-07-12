@@ -78,7 +78,10 @@ def main(argv=None):
             if aid:
                 _post({"session_id": sid, "agent_id": aid, "kind": "stop"}, port=port)
             return 0
-        state = protocol.normalize("thinking" if event == "SubagentStart" else event)
+        if event == "SubagentStart":
+            state = protocol.THINKING
+        else:
+            state = protocol.state_for_event(event, ctx.get("tool"))
         if state is None:
             return 0
         body = {"session_id": sid, "state": state, "tool": ctx.get("tool")}

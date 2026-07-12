@@ -20,6 +20,20 @@ class ProtocolTest(unittest.TestCase):
         self.assertIsNone(protocol.normalize("garbage"))
         self.assertIsNone(protocol.normalize(None))
 
+    def test_state_for_event_waiting_tools(self):
+        # 阻塞等用户的工具在 PreToolUse 时判为 waiting,而非 tool
+        self.assertEqual(protocol.state_for_event("PreToolUse", "AskUserQuestion"), protocol.WAITING)
+        self.assertEqual(protocol.state_for_event("PreToolUse", "ExitPlanMode"), protocol.WAITING)
+        # 普通工具仍是 tool
+        self.assertEqual(protocol.state_for_event("PreToolUse", "Bash"), protocol.TOOL)
+        self.assertEqual(protocol.state_for_event("PreToolUse", None), protocol.TOOL)
+        # 其他事件照常
+        self.assertEqual(protocol.state_for_event("Notification"), protocol.WAITING)
+        self.assertEqual(protocol.state_for_event("Stop"), protocol.IDLE)
+        self.assertEqual(protocol.state_for_event("PostToolUse"), protocol.THINKING)
+        # 等待工具名只在 PreToolUse 生效(其他事件不误判)
+        self.assertEqual(protocol.state_for_event("PostToolUse", "AskUserQuestion"), protocol.THINKING)
+
     def test_is_valid(self):
         self.assertTrue(protocol.is_valid("idle"))
         self.assertFalse(protocol.is_valid("PreToolUse"))
