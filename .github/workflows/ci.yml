@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install textual (needed by the panel tests)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install textual
+      - name: Run the full test suite
+        run: python -m unittest discover -s tests -v
+
+  clean-install:
+    name: clean-install smoke (build wheel -> fresh venv -> run wisp)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build wheel + sdist and validate metadata
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+      - name: Install the built wheel into a clean venv (with [tui])
+        run: |
+          python -m venv /tmp/wisp-clean
+          WHL="$(ls dist/agenticwisp-*.whl)"
+          /tmp/wisp-clean/bin/pip install "${WHL}[tui]"
+      - name: Smoke-test the installed console script from the wheel
+        run: |
+          # the console script must run end-to-end from a real install:
+          /tmp/wisp-clean/bin/wisp status            # no hub -> "not running", exit 0
+          if /tmp/wisp-clean/bin/wisp __invalid__; then
+            echo "FAIL: an unknown command should print usage and exit non-zero"; exit 1
+          fi
+          /tmp/wisp-clean/bin/python -c "import agenticwisp, agenticwisp.cli, agenticwisp.demo, textual; print('imports OK, version', agenticwisp.__version__)"

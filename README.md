@@ -49,11 +49,13 @@ Anyone who runs Claude Code and wants to know what it's up to without babysittin
 
 ## Quick start
 
-> **Platform:** Linux, macOS, or Windows through **WSL**. The launcher is a bash script and assumes a Unix shell, so **native Windows (cmd / PowerShell) isn't supported** — run it inside WSL.
+> **Platform:** Linux and macOS are supported directly. Windows is supported through **WSL** — the hub's lifecycle commands (`up` / `down` / `status`) rely on POSIX process semantics (`os.kill`, `SIGTERM`, `start_new_session`), so **native Windows (cmd / PowerShell) isn't supported yet**. Run it inside WSL.
 
 ```bash
-pipx install "agenticwisp[tui]"          # from PyPI (the fancy panel needs the [tui] extra)
-# or, from source, no PyPI account needed:
+# install (pick one) — the [tui] extra pulls in textual for the fancy panel:
+pipx install "agenticwisp[tui]"          # with pipx
+uv tool install "agenticwisp[tui]"       # ...or with uv
+# from source, no PyPI account needed:
 #   pipx install "git+https://github.com/martinghl/AgenticWisp.git"
 
 wisp demo            # see it now — a self-contained animated tour, no Claude needed
