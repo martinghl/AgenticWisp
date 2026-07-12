@@ -24,7 +24,7 @@ EVENTS = [
 
 
 def build_hooks(wisp_bin):
-    """返回把 8 个事件都接到 `<wisp_bin> signal <Event>` 的 hooks 映射。"""
+    """返回把 10 个事件都接到 `<wisp_bin> signal <Event>` 的 hooks 映射。"""
     hooks = {}
     for event, matcher in EVENTS:
         entry = {"hooks": [{"type": "command",
@@ -75,6 +75,61 @@ def merge_into_settings(wisp_bin, settings_path=None):
         json.dump(data, f, indent=2, ensure_ascii=False)
     os.replace(tmp, settings_path)
     return added, backup, settings_path
+
+
+def _is_ours(command, event):
+    """True iff `command` is one of ours: a wisp launcher invoked as `... <wisp> signal <event>`
+    (tolerates an env-var prefix, e.g. `WISP_PYTHON=... /path/bin/wisp signal <event>`)."""
+    if not command:
+        return False
+    parts = command.split()
+    if parts[-2:] != ["signal", event]:
+        return False
+    return any(os.path.basename(p) == "wisp" for p in parts[:-2])
+
+
+def remove_from_settings(settings_path=None):
+    """Idempotently strip our hook groups. Returns (removed_events, backup|None, path)."""
+    settings_path = settings_path or os.path.expanduser("~/.claude/settings.json")
+    if not os.path.exists(settings_path):
+        return [], None, settings_path
+    backup = settings_path + ".bak-agenticwisp"
+    shutil.copy(settings_path, backup)
+    try:
+        with open(settings_path) as f:
+            data = json.load(f)
+    except ValueError:
+        return [], backup, settings_path
+    if not isinstance(data, dict) or not isinstance(data.get("hooks"), dict):
+        return [], backup, settings_path
+    hooks = data["hooks"]
+    removed = []
+    for event, _matcher in EVENTS:
+        groups = hooks.get(event)
+        if not isinstance(groups, list):
+            continue
+        kept_groups = []
+        for g in groups:
+            if not isinstance(g, dict) or not isinstance(g.get("hooks"), list):
+                kept_groups.append(g)
+                continue
+            entries = g["hooks"]
+            kept_entries = [h for h in entries if not _is_ours(h.get("command"), event)]
+            if len(kept_entries) != len(entries):
+                removed.append(event)
+            if not kept_entries:
+                continue  # the whole group was ours -> drop it
+            g["hooks"] = kept_entries
+            kept_groups.append(g)
+        if kept_groups:
+            hooks[event] = kept_groups
+        else:
+            hooks.pop(event, None)
+    tmp = settings_path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, settings_path)
+    return removed, backup, settings_path
 
 
 def main(argv=None):

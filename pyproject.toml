@@ -1,19 +1,36 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "agenticwisp"
-version = "0.2.0"
-description = "A signal light that mirrors a remote Claude Code session's state over your existing SSH tunnel."
+dynamic = ["version"]
+description = "A status light and a status line for Claude Code, in a cyberpunk terminal panel."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
-keywords = ["claude", "claude-code", "status-light", "tui", "textual", "ssh"]
-dependencies = []  # the core (hub + hooks + browser lamp) is pure standard library
+license = "MIT"
+authors = [{ name = "Martin Li", email = "ghlasap@gmail.com" }]
+keywords = ["claude", "claude-code", "status-light", "statusline", "tui", "textual", "cyberpunk"]
+classifiers = [
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Topic :: Terminals",
+  "Topic :: Utilities",
+]
+dependencies = []
 
 [project.optional-dependencies]
-tui = ["textual>=0.60"]  # only the fancy terminal "Reactor Core" lamp needs textual
+tui = ["textual>=0.60"]
+
+[project.scripts]
+wisp = "agenticwisp.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/martinghl/AgenticWisp"
+Source = "https://github.com/martinghl/AgenticWisp"
 
 [tool.setuptools]
 packages = ["agenticwisp", "agenticwisp.tui"]
+
+[tool.setuptools.dynamic]
+version = { attr = "agenticwisp.__version__" }

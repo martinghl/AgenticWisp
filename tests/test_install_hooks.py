@@ -43,5 +43,77 @@ class InstallHooksTest(unittest.TestCase):
         self.assertIn("hooks", data)
 
 
+class RemoveHooksTest(unittest.TestCase):
+    def _settings(self, data):
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "settings.json")
+        with open(p, "w") as f:
+            json.dump(data, f)
+        return p
+
+    def test_remove_deletes_our_hooks_keeps_others(self):
+        p = self._settings({})
+        install_hooks.merge_into_settings("/abs/bin/wisp", settings_path=p)
+        with open(p) as f:
+            data = json.load(f)
+        data["hooks"]["Stop"].append(
+            {"hooks": [{"type": "command", "command": "/other/tool notify", "timeout": 5}]})
+        with open(p, "w") as f:
+            json.dump(data, f)
+
+        removed, backup, _ = install_hooks.remove_from_settings(settings_path=p)
+
+        self.assertTrue(removed)
+        self.assertIsNotNone(backup)
+        with open(p) as f:
+            out = json.load(f)
+        blob = json.dumps(out)
+        self.assertNotIn("/abs/bin/wisp", blob)      # our commands gone
+        self.assertIn("/other/tool notify", blob)     # unrelated hook kept
+
+    def test_remove_is_idempotent(self):
+        p = self._settings({})
+        install_hooks.merge_into_settings("/abs/bin/wisp", settings_path=p)
+        install_hooks.remove_from_settings(settings_path=p)
+        removed2, _, _ = install_hooks.remove_from_settings(settings_path=p)
+        self.assertEqual(removed2, [])
+
+    def test_remove_keeps_unrelated_command_bundled_in_same_group(self):
+        p = self._settings({"hooks": {"Stop": [
+            {"hooks": [
+                {"type": "command", "command": "/abs/bin/wisp signal Stop", "timeout": 5},
+                {"type": "command", "command": "/other/tool notify", "timeout": 5},
+            ]}
+        ]}})
+        install_hooks.remove_from_settings(settings_path=p)
+        with open(p) as f:
+            blob = json.dumps(json.load(f))
+        self.assertNotIn("/abs/bin/wisp", blob)
+        self.assertIn("/other/tool notify", blob)
+
+    def test_is_ours_matches_launcher_signal_event(self):
+        self.assertTrue(install_hooks._is_ours("/home/u/.local/bin/wisp signal Stop", "Stop"))
+        self.assertTrue(install_hooks._is_ours("/repo/bin/wisp signal PreToolUse", "PreToolUse"))
+        self.assertFalse(install_hooks._is_ours("/other/tool notify Stop", "Stop"))
+        self.assertFalse(install_hooks._is_ours("/repo/bin/wisp signal Stop", "PreToolUse"))
+
+    def test_is_ours_matches_env_prefixed_snippet_form(self):
+        self.assertTrue(install_hooks._is_ours(
+            "WISP_PYTHON=/usr/bin/python3 /data/x/bin/wisp signal Stop", "Stop"))
+        self.assertFalse(install_hooks._is_ours(
+            "/opt/agenticwisp.signal-x/tool signal Stop", "Stop"))
+
+    def test_remove_strips_env_prefixed_snippet_form(self):
+        p = self._settings({"hooks": {"Stop": [
+            {"hooks": [{"type": "command",
+                        "command": "WISP_PYTHON=/usr/bin/python3 /data/x/bin/wisp signal Stop",
+                        "timeout": 5}]}
+        ]}})
+        removed, _b, _p = install_hooks.remove_from_settings(settings_path=p)
+        self.assertIn("Stop", removed)
+        with open(p) as f:
+            self.assertNotIn("/data/x/bin/wisp", json.dumps(json.load(f)))
+
+
 if __name__ == "__main__":
     unittest.main()

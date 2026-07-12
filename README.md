@@ -51,17 +51,22 @@ Anyone who runs Claude Code and wants to know what it's up to without babysittin
 > **Platform:** Linux, macOS, or Windows through **WSL**. The launcher is a bash script and assumes a Unix shell, so **native Windows (cmd / PowerShell) isn't supported** — run it inside WSL.
 
 ```bash
-git clone https://github.com/martinghl/AgenticWisp.git
-cd AgenticWisp
+pipx install "agenticwisp[tui]"          # from PyPI (the fancy panel needs the [tui] extra)
+# or, from source, no PyPI account needed:
+#   pipx install "git+https://github.com/martinghl/AgenticWisp.git"
 
-# optional: a virtualenv the launcher auto-detects (only the fancy panel needs textual)
-python3 -m venv .venv && .venv/bin/pip install textual
-
-bin/wisp up          # start the hub (backgrounds itself; binds 127.0.0.1 only)
-bin/wisp watch       # open the panel   (add --simple for a stdlib-only fallback)
-bin/wisp status      # current aggregate state
-bin/wisp down        # stop the hub
+wisp demo            # see it now — a self-contained animated tour, no Claude needed
 ```
+
+Then wire it to Claude Code:
+
+```bash
+wisp up              # start the hub (backgrounds itself; binds 127.0.0.1 only)
+wisp install-hooks   # merge hooks into ~/.claude/settings.json (backup kept), then restart Claude Code
+wisp watch           # open the panel   (add --simple for a stdlib-only fallback)
+```
+
+Prefer a checkout? `git clone https://github.com/martinghl/AgenticWisp.git && cd AgenticWisp && bin/wisp demo` works too.
 
 ## Connect it to Claude Code
 
@@ -139,6 +144,13 @@ python3 -m unittest discover -s tests           # core suite (stdlib only)
 
 - A physical Arduino traffic light on the desk, driven over USB (`GET /aggregate` already exposes exactly what it needs).
 - Per-tool colors and richer browser animations.
+
+## Uninstall
+
+```bash
+wisp uninstall-hooks     # remove AgenticWisp's hooks from ~/.claude/settings.json (backup kept)
+pipx uninstall agenticwisp
+```
 
 ## License
 
