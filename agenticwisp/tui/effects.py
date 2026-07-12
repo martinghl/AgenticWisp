@@ -124,16 +124,18 @@ def compose_core(w, h, state, t, from_state=None, trans_p=1.0, fancy=True):
                     fg = shade(palette.CYAN, 0.25 + 0.35 * rb)   # 暗青雨字
             row.append([ch, fg, bg])
         grid.append(row)
-    # HUD 标题(顶行居中,全角 + 棱形括号,微 glitch)
-    title = glitch(hud_title(state.upper() if state else "REACTOR"), t, rate=0.05) if fancy \
-        else hud_title(state or "REACTOR")
-    # HUD 标题放最上一行(不居中),边界检查针对实际网格
+    # HUD 标题(顶行,单宽 ASCII 标签):全角字符是双宽(占 2 终端列),
+    # 放进"每格 1 列"的网格会让该行渲染得比 w 宽→终端折行、把下一行挤黑;
+    # 故这里用单宽 "// STATE //"。(hud_title 的全角只用于 UsageHUD 的自由文本行。)
+    title = "// " + (state.upper() if state else "REACTOR") + " //"
+    # HUD 标题放最上一行(居中),边界检查针对实际网格;整段清掉背景数据雨,
+    # 让标签读作干净的 "// STATE //"(空格也写成空位,只保留该格 bg)
     if grid:
         x0 = max(0, (w - len(title)) // 2)
         for j, ch in enumerate(title):
             x = x0 + j
-            if ch != " " and 0 <= x < w:
-                grid[0][x] = [ch, _WHITE, grid[0][x][2]]
+            if 0 <= x < w:
+                grid[0][x] = [ch, (_WHITE if ch != " " else None), grid[0][x][2]]
     # 中央大字 banner(走 glitch)
     eng, _zh = banner(state)
     eng2 = glitch(eng, t, rate=0.06) if fancy else eng

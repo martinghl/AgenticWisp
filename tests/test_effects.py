@@ -202,9 +202,28 @@ class ReactorNeonTest(unittest.TestCase):
         self.assertEqual(len(bg), 3)
         # 霓虹:出现过品红系(tool=MAGENTA)分量——某格 bg 的 R 明显>0 且 B 明显>0
         self.assertTrue(any(g[2][0] > 40 and g[2][2] > 40 for row in grid for g in row))
-        # 顶部某处含全角 HUD 标题的棱形括号
+        # 顶部含单宽 HUD 标题(// STATE //);单宽避免双宽折行挤黑
         joined = "".join(g[0] for row in grid for g in row)
-        self.assertIn("【", joined)
+        self.assertIn("//", joined)
+        self.assertIn("TOOL", joined)
+
+    def test_compose_core_no_row_exceeds_terminal_width(self):
+        # 每格假设占 1 终端列;任何行的显示宽度都不得超过 w,
+        # 否则终端会把该行折行,把下一行挤黑(全角双宽标题就会这样)。
+        import unicodedata
+
+        def dispw(ch):
+            return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+
+        w = 40
+        for state in ("tool", "thinking", "waiting", "idle", "error"):
+            grid = effects.compose_core(w, 11, state, 0.0)
+            for y, row in enumerate(grid):
+                line = "".join(c[0] for c in row)
+                vis = sum(dispw(ch) for ch in line)
+                self.assertLessEqual(
+                    vis, w,
+                    f"row {y} (state={state}) 显示宽度 {vis} > w={w};含双宽字符会折行挤黑")
 
     def test_compose_core_deterministic(self):
         self.assertEqual(effects.compose_core(20, 6, "idle", 2.0),
