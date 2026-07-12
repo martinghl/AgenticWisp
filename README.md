@@ -8,11 +8,12 @@
 
 <p align="center">
   <img alt="python" src="https://img.shields.io/badge/python-3.9%2B-blue">
+  <img alt="platform" src="https://img.shields.io/badge/platform-Linux%20%C2%B7%20macOS%20%C2%B7%20WSL-informational">
   <img alt="core deps" src="https://img.shields.io/badge/core-stdlib%20only-brightgreen">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-black">
 </p>
 
-<p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
+<p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a></p>
 
 <p align="center">
   <img src="docs/media/demo.gif" width="860" alt="wisp watch — the terminal panel">
@@ -46,6 +47,8 @@ The one state that actually needs *you* — a question, a permission prompt, a p
 Anyone who runs Claude Code and wants to know what it's up to without babysitting it — whether that's one session or ten. Especially if you'd like your terminal to look the part.
 
 ## Quick start
+
+> **Platform:** Linux, macOS, or Windows through **WSL**. The launcher is a bash script and assumes a Unix shell, so **native Windows (cmd / PowerShell) isn't supported** — run it inside WSL.
 
 ```bash
 git clone https://github.com/martinghl/AgenticWisp.git
