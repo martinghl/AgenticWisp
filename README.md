@@ -123,7 +123,7 @@ Now the light follows Claude automatically: you type → 🟡, it runs a tool �
 
 The panel is a cyberpunk neon HUD on black, in three zones top to bottom:
 
-- a big animated **Reactor Core** — a neon plasma field (magenta/cyan/purple) with a faint katakana **data-rain**, a moving **scanline**, an occasional **glitch**, and a `// STATE //` HUD title showing the aggregate (or focused) state;
+- a big animated **Reactor Core** — a neon plasma field (magenta/cyan/purple) with a faint katakana **data-rain**, a moving **scanline**, an occasional **glitch**, a `// STATE //` HUD title, and the aggregate (or focused) state spelled out **big, in 3-row half-block ASCII art** (falling back to a small one-line label on a narrow/short panel);
 - a **numbered session table** — each row shows its **model**, state, **reasoning effort**, a **context-window gauge** (used / max, green→amber→pink), a neon **data-pulse heartbeat**, **time in state**, and **cumulative tokens**; a session's running **subagents** appear beneath it as `↳`-prefixed sub-rows with the same telemetry, and a row pulses harder when its token usage jumps;
 - a cyberpunk **Usage HUD** — a fullwidth title, a glowing **$cost** headline, an input/output/cache token breakdown with turn/session/web counts, and per-model **neon energy bars** with a flowing highlight.
 

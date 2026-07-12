@@ -69,6 +69,39 @@ def banner(state):
     return _ENG.get(state, state.upper()), _ZH.get(state, "")
 
 
+# 3 行半块字符画字体(只用 ▀▄█ + 空格,全单宽——固定网格里禁用双宽字符)。
+# 覆盖 5 个状态词 IDLE/THINKING/TOOL/WAITING/ERROR 用到的全部字母。
+_BIGFONT = {
+    "I": ["▀█▀", " █ ", "▄█▄"],
+    "D": ["█▀▄", "█ █", "█▄▀"],
+    "L": ["█  ", "█  ", "█▄▄"],
+    "E": ["█▀▀", "█▀▀", "█▄▄"],
+    "T": ["▀█▀", " █ ", " █ "],
+    "H": ["█ █", "█▀█", "█ █"],
+    "N": ["██ █", "█ ██", "█  █"],   # 4 宽,明显对角线,区别于 H
+    "K": ["█▄▀", "██ ", "█▀▄"],
+    "G": ["▄▀▀", "█ ▄", "▀▄▀"],
+    "O": ["▄▀▄", "█ █", "▀▄▀"],
+    "W": ["█   █", "█ ▄ █", "▀▄▀▄▀"],
+    "A": ["▄▀▄", "█▀█", "█ █"],
+    "R": ["█▀▄", "█▀▄", "█ █"],
+}
+
+
+def bigword(text, gap=1):
+    """把一个词渲染成 3 行半块大字;返回 3 个等宽字符串。未知字符留 3 宽空。"""
+    rows = ["", "", ""]
+    chars = (text or "").upper()
+    for i, ch in enumerate(chars):
+        glyph = _BIGFONT.get(ch, ["   ", "   ", "   "])
+        for r in range(3):
+            rows[r] += glyph[r]
+            if i < len(chars) - 1:
+                rows[r] += " " * gap
+    width = max((len(r) for r in rows), default=0)
+    return [r.ljust(width) for r in rows]
+
+
 def particles(t, n, w, h):
     out = []
     cx, cy = w / 2.0, h / 2.0
@@ -136,11 +169,24 @@ def compose_core(w, h, state, t, from_state=None, trans_p=1.0, fancy=True):
             x = x0 + j
             if 0 <= x < w:
                 grid[0][x] = [ch, (_WHITE if ch != " " else None), grid[0][x][2]]
-    # 中央大字 banner(走 glitch)
-    eng, _zh = banner(state)
-    eng2 = glitch(eng, t, rate=0.06) if fancy else eng
-    rule = "─" * len(eng2)
-    _place_lines(grid, w, h, [rule, eng2, rule], _WHITE)
+    # 中央状态词:够宽够高时用 3 行半块大字符画;否则回退小号单行 banner。
+    big = bigword(state) if state else ["", "", ""]
+    bw = len(big[0])
+    has_glyph = any(c != " " for r in big for c in r)   # 未知状态字模全空→回退
+    if h >= 7 and 0 < bw <= w and has_glyph:
+        lines = ["─" * bw, big[0], big[1], big[2], "─" * bw]
+        # 先把大字包围盒里的数据雨清掉(字母内部空隙不再漏雨),再叠字
+        start_y = max(0, h // 2 - len(lines) // 2)
+        x0 = max(0, (w - bw) // 2)
+        for yy in range(start_y, min(h, start_y + len(lines))):
+            for xx in range(x0, min(w, x0 + bw)):
+                grid[yy][xx] = [" ", None, grid[yy][xx][2]]
+        _place_lines(grid, w, h, lines, _WHITE)
+    else:
+        eng, _zh = banner(state)
+        eng2 = glitch(eng, t, rate=0.06) if fancy else eng
+        rule = "─" * len(eng2)
+        _place_lines(grid, w, h, [rule, eng2, rule], _WHITE)
     return grid
 
 

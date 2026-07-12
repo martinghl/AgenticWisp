@@ -81,13 +81,13 @@ class ComposeCoreTest(unittest.TestCase):
         self.assertEqual(len(bg), 3)  # bg 必为 rgb 三元组
 
     def test_banner_text_present(self):
-        # 霓虹版 banner 走 glitch(确定性、偶发字符替换),故按实际 glitch 结果比对,
-        # 而非逐字符断言原始 ASCII(旧版无 glitch 时才成立)。
-        grid = effects.compose_core(40, 9, "tool", 0.0)
+        # 够宽够高时中央是大字符画;矮面板(h<7)回退到小号单行 banner。
+        # 这里测回退路径:fancy=False 无数据雨(字间空隙是真空格)且不 glitch,
+        # 故可直接断言原始 banner 文本。
+        grid = effects.compose_core(40, 5, "tool", 0.0, fancy=False)
         flat = self._flat(grid)
         eng, _zh = effects.banner("tool")
-        expected = effects.glitch(eng, 0.0, rate=0.06)
-        self.assertIn(expected, flat)
+        self.assertIn(eng, flat)
 
     def test_bg_uses_state_hue(self):
         # tool 是霓虹品红(palette.state_hex=MAGENTA #ea00d9:r,b 高于 g);取一个非大字格的底色验证色相
@@ -224,6 +224,44 @@ class ReactorNeonTest(unittest.TestCase):
                 self.assertLessEqual(
                     vis, w,
                     f"row {y} (state={state}) 显示宽度 {vis} > w={w};含双宽字符会折行挤黑")
+
+    def test_bigword_shape_and_bigness(self):
+        rows = effects.bigword("IDLE")
+        self.assertEqual(len(rows), 3)                    # 3 行高
+        self.assertTrue(all(len(r) == len(rows[0]) for r in rows))  # 各行等宽
+        self.assertGreater(len(rows[0]), len("IDLE"))     # 确实是"大字"(比逐字宽)
+        joined = "".join(rows)
+        self.assertTrue(any(c in joined for c in "▀▄█"))  # 用了半块字符
+
+    def test_bigword_covers_all_state_letters(self):
+        # 5 个状态词的每个字母都要有字模,否则渲染成空洞
+        letters = set("".join(("IDLE", "THINKING", "TOOL", "WAITING", "ERROR")))
+        for ch in letters:
+            self.assertIn(ch, effects._BIGFONT, f"字体缺字母 {ch!r}")
+
+    def test_bigword_font_is_single_width(self):
+        # 字模只能用单宽字符,否则会重蹈标题双宽折行的覆辙
+        import unicodedata
+        for ch, glyph in effects._BIGFONT.items():
+            for row in glyph:
+                for c in row:
+                    self.assertNotIn(
+                        unicodedata.east_asian_width(c), ("W", "F"),
+                        f"字母 {ch!r} 的字模含双宽字符 {c!r}")
+
+    def test_compose_core_renders_bigword_when_room(self):
+        # 够宽够高 → 中央是 3 行大字符画(█ 只可能来自大字)
+        grid = effects.compose_core(60, 11, "idle", 0.0)
+        block_rows = sum(1 for row in grid if "█" in "".join(c[0] for c in row))
+        self.assertGreaterEqual(block_rows, 3, "应有 3 行大字符画")
+
+    def test_compose_core_falls_back_when_too_narrow(self):
+        # THINKING 大字宽 ~33;w=12 放不下 → 回退到小号 banner(无 █ 大字)
+        grid = effects.compose_core(12, 11, "thinking", 0.0)
+        self.assertEqual(len(grid), 11)
+        self.assertTrue(all(len(r) == 12 for r in grid))
+        block_rows = sum(1 for row in grid if "█" in "".join(c[0] for c in row))
+        self.assertEqual(block_rows, 0, "窄屏应回退到小号 banner,不渲染大字")
 
     def test_compose_core_deterministic(self):
         self.assertEqual(effects.compose_core(20, 6, "idle", 2.0),
