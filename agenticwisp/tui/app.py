@@ -121,14 +121,11 @@ class UsageHUD(Static):
             return Text(i18n.t("tui.usage.waiting"), style=palette.CYAN)
         t = time.monotonic() - self._t0
         out = Text()
-        # HUD 标题(微 glitch)
-        out.append(effects.glitch(effects.hud_title("USAGE / GLOBAL"), t, rate=0.04) + "\n",
+        # HUD 标题(单宽 "// GLOBAL USAGE //",和 reactor 一致):全角字符在缺字体的终端/
+        # 渲染器里会糊成豆腐/CJK,单宽稳且始终含可搜索的 "USAGE" 子串。
+        out.append(effects.glitch("// GLOBAL USAGE //", t, rate=0.04) + "\n",
                    style=f"{palette.MAGENTA} bold")
-        # 大号消费(微 glitch + 呼吸亮度用 PALE/CYAN)。注意:effects.hud_title 会把文字转全角
-        # (见 tests/test_effects.py::test_hud_title),上面的 HUD 标题因此不含半角 "USAGE" 子串;
-        # 这里补一个不经 glitch 的半角 "USAGE" 标签,保证渲染内容始终含 "USAGE"(测试 & 可搜索文本)。
-        out.append("USAGE", style=f"{palette.MAGENTA} bold")
-        spend = effects.glitch(f"  {render.fmt_cost(a.get('cost_usd', 0))}", t, rate=0.05)
+        spend = effects.glitch(render.fmt_cost(a.get('cost_usd', 0)), t, rate=0.05)
         out.append(spend, style=f"{palette.PALE} bold")
         out.append(f"   IN {render.fmt_tokens(a.get('in', 0))} ▸ OUT {render.fmt_tokens(a.get('out', 0))}"
                    f" ▸ CACHE {render.fmt_tokens(a.get('cache', 0))} ▸ {a.get('turns', 0)} TURNS"

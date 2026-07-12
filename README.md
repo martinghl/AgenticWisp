@@ -1,7 +1,9 @@
-<h1 align="center">AgenticWisp 🔦</h1>
+<p align="center">
+  <img src="docs/media/logo.png" width="640" alt="AgenticWisp">
+</p>
 
 <p align="center">
-  <b>A signal light for a <i>remote</i> Claude Code session — see what your AI is doing, from wherever you are.</b>
+  <b>A status light and a status line for Claude Code — wrapped in a cyberpunk terminal panel.</b>
 </p>
 
 <p align="center">
@@ -10,64 +12,38 @@
   <img alt="license" src="https://img.shields.io/badge/license-MIT-black">
 </p>
 
+<p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
+
 <p align="center">
-  <b>English</b> | <a href="README.zh-CN.md">简体中文</a>
+  <img src="docs/media/demo.gif" width="860" alt="wisp watch — the terminal panel">
 </p>
 
----
+Claude Code already tells you what it's doing — but not at a glance, and not across several sessions at once. AgenticWisp reads its live state from hooks and turns it into a **light**: the color is the state (thinking · running a tool · waiting on you · done · error), and under it runs a **status line's** worth of detail — model, context window, tokens, running cost — one row per session.
 
-> Think **Claude Traffic Light** — the glanceable red/yellow/green idea everyone loves — fused with Claude Code's built-in **status line** (model · context · tokens · cost). The traffic light gives you the state at a glance; the status line gives you the rich per-session detail. AgenticWisp does both — for a Claude that lives on a **remote** machine, over the SSH tunnel you already have open.
+And it's a *nice* light. The panel is a neon TUI — a plasma "reactor" that spells out the current state in big letters, a katakana data-rain, a heartbeat that pulses per session — because something you leave open all day might as well look like it's from a better future.
 
----
+It's small — a standard-library core plus one tiny hub — and it starts with one command.
 
-## The problem, and the fix
+## When it's your turn, you'll know
 
-Your Claude Code session almost certainly isn't running on the laptop in front of you. It's on a GPU box down the hall, a cloud dev instance, a shared research server behind a VPN — reached over SSH, in a terminal tab you keep alt-tabbing back to. Is it still thinking? Running a tool? Sitting there quietly waiting on a permission prompt it asked you for five minutes ago? From a stale terminal window, you genuinely cannot tell.
+The one state that actually needs *you* — a question, a permission prompt, a plan to approve — turns the whole panel red and spells out **PENDING**. Hard to miss, on purpose.
 
-AgenticWisp turns Claude's live state into a light. The **traffic-light** side is the aggregate glow — one glance tells you the busiest thing happening across every session on the box. The **status-line** side is what you get when you look closer — model, reasoning effort, context-window usage, tokens, and running cost, per session, updated live. Claude's hooks report state to a tiny hub on the server; the signal rides back to you over **the SSH tunnel you already have** — no cloud, no exposed ports, nothing new to trust.
+<p align="center">
+  <img src="docs/media/demo_pending.png" width="860" alt="the panel when Claude is waiting on you">
+</p>
 
-## Who's this for?
+## What you get
 
-Anyone whose Claude lives on a box they reach over SSH or a VPN: grad students and researchers running things on a shared GPU box, ML folks on a compute cluster, developers on a cloud or remote dev machine, or just anyone who kicks off a long autonomous agent session and then has to walk away. If you've ever alt-tabbed to a dead-looking SSH window wondering "is it still thinking, or is it waiting on *me*?" — that's exactly the itch this scratches.
+- **A status light** — one color per state, so a glance across every session tells you what, if anything, needs you.
+- **A status line** — model, reasoning effort, a context-window gauge, tokens, and a live cost estimate, per session (and per subagent).
+- **A cyberpunk TUI** — the Reactor Core, plasma, data-rain, per-session heartbeats, the red PENDING alarm. Tuned to stay smooth even over a laggy connection.
+- **Three ways to look** — the full `textual` panel, a self-contained browser page, and a zero-dependency fallback lamp.
+- **Barely there** — the hub, hooks, and browser lamp are pure Python standard library; only the fancy panel needs `textual`. Nothing phones home; the hub binds `127.0.0.1` only.
+- **Never in the way** — the hook client has a 0.3 s timeout, swallows every error, and always exits 0. The light can fail; your Claude session never will.
 
-## What it looks like
+## Who it's for
 
-```
-              ╭──────────────────────────────────────╮
-       · ✦    │            // TOOL //                  │    ✦ ·
-     ✦        │           ───────────────              │        ✦
-       · ✦    │           ▀█▀ ▄▀▄ ▄▀▄ █                 │    ✦ ·      ← Reactor Core: neon
-              │            █  █ █ █ █ █                 │               plasma + data-rain +
-              │            █  ▀▄▀ ▀▄▀ █▄▄               │               scanline, state spelled
-              │           ───────────────              │               out big, HUD-titled
-              ╰──────────────────────────────────────╯
-
- #  session          model       state        effort   ctx           heart          time   token
-▸1  agentic-wisp     sonnet-5    ● tool        high     ██████░░ 74%  ▂▄▆█▆▄▂▁▂▄▆█   0:42  18.4k    ← one row per live
-    ↳ Explore                   ● thinking    medium   ███░░░░░ 31%  ▁▂▃▂▁▁▂▃▁▂▃▂   0:05   2.1k       session, subagents
- 2  data-pipeline    opus-4-8    ● thinking    medium   ██░░░░░░ 22%  ▂▁▁▂▃▂▁▁▂▃▁▂   1:03  41.2k       nested underneath
- 3  api-server       haiku-4-5   ● idle        —        █░░░░░░░  9%  ▁▁▁▁▂▁▁▁▁▁▁▁   3:20   5.0k
-
-【 ＵＳＡＧＥ / ＧＬＯＢＡＬ 】  USAGE  $2.14   IN 128.4k ▸ OUT 22.7k ▸ CACHE 610.2k ▸ 9 TURNS ▸ 3 LIVE   ← Usage HUD: running $ cost
-```
-
-The "light" can be that cinematic terminal panel (the *Reactor Core*), a browser page for a second monitor, or — once the office IT department approves a USB device — a physical Arduino traffic light on your desk.
-
-## Features
-
-- **Multi-session aware** — sees every live Claude Code session on the box, by its real name (from `/rename`) and working directory, so you never have to guess which window is which.
-- **Aggregate light, or zoom in** — one glance shows the "busiest" state across everything; press a number to focus a single session when you need the detail.
-- **5 states, animated, always readable** — hue is always the state, so you can tell at a glance even mid-animation; only brightness/texture move.
-- **A cyberpunk neon look built for the long haul** — the panel is a neon HUD on black, tuned for cross-continental SSH (low frame rate, deterministic frames, forced truecolor) so it stays smooth instead of turning into a slideshow.
-- **Subagent tracking** — spun-up subagents show up as their own live sub-rows, each with its own state and heartbeat, so you can see delegation happening in real time.
-- **Live neon heartbeats** — every row pulses by state, and pulses harder the moment that session's token usage jumps — a busy agent visibly *looks* busy.
-- **Rich per-row telemetry** — model, reasoning effort, a context-window gauge (**cyan → amber → pink** as it fills), time-in-state, and cumulative tokens, per session and per subagent. This is the status-line half of the idea.
-- **Usage HUD** — a running total-cost estimate across every session, broken down by model, with cheap cache reads de-weighted so the number reflects what you actually spent.
-- **English or Chinese, your call** — set `WISP_LANG` once and every surface (panel, browser page, simple lamp, CLI) follows.
-- **Three display ends for wherever you're looking** — a full `textual` terminal panel, a self-contained browser page, and a zero-dependency fallback lamp.
-- **Never breaks Claude** — the hook client has a 0.3-second timeout, swallows every error, and always exits 0. The light can fail; your session never will.
-- **No cloud, no exposed ports** — everything rides your existing SSH tunnel; the hub binds `127.0.0.1` only.
-- **Stdlib-only core** — the hub, hooks, and browser lamp need nothing beyond the Python standard library. Only the fancy terminal panel needs `textual`.
+Anyone who runs Claude Code and wants to know what it's up to without babysitting it — whether that's one session or ten. Especially if you'd like your terminal to look the part.
 
 ## Quick start
 
@@ -75,127 +51,94 @@ The "light" can be that cinematic terminal panel (the *Reactor Core*), a browser
 git clone https://github.com/martinghl/AgenticWisp.git
 cd AgenticWisp
 
-# (optional but recommended) a virtualenv the launcher will auto-detect:
-python3 -m venv .venv
-.venv/bin/pip install textual        # or: .venv/bin/pip install -r requirements-tui.txt
+# optional: a virtualenv the launcher auto-detects (only the fancy panel needs textual)
+python3 -m venv .venv && .venv/bin/pip install textual
 
-# 1. start the state hub (backgrounds itself; binds 127.0.0.1 only)
-bin/wisp up
-
-# 2. in another SSH window, open the light:
-bin/wisp watch                        # fancy Reactor Core (auto-finds a python with textual)
-#   bin/wisp watch --simple           # stdlib-only fallback (no textual needed)
-
-bin/wisp status                       # what's the current aggregate state?
-bin/wisp down                         # stop the hub
+bin/wisp up          # start the hub (backgrounds itself; binds 127.0.0.1 only)
+bin/wisp watch       # open the panel   (add --simple for a stdlib-only fallback)
+bin/wisp status      # current aggregate state
+bin/wisp down        # stop the hub
 ```
-
-> `bin/wisp watch` automatically picks the first interpreter that has `textual`
-> (checking `$WISP_PYTHON`, then a couple of fallback candidates), so you
-> don't have to type a long interpreter path every time.
 
 ## Connect it to Claude Code
 
-Wire Claude's hooks to the light with **one command** — it fills in its own absolute path and merges into your `~/.claude/settings.json` (with a backup, idempotent):
-
 ```bash
-bin/wisp install-hooks
-# then restart your Claude Code session to activate the hooks
+bin/wisp install-hooks    # fills in its own path, merges into ~/.claude/settings.json (backup kept)
+# then restart your Claude Code session
 ```
 
-Prefer to do it by hand? Copy the `hooks` block from [`hooks/settings-snippet.json`](hooks/settings-snippet.json) into `~/.claude/settings.json`, replacing the placeholder path in each hook command with the path to your own clone.
-
-Now the light follows Claude automatically: you type → 🟡, it runs a tool → 🟣, it needs your approval → 🔵, it finishes → 🟢.
+Prefer to wire it by hand? Copy the `hooks` block from [`hooks/settings-snippet.json`](hooks/settings-snippet.json) into `~/.claude/settings.json` and swap in your clone's path. Either way: you type → 🟡, it runs a tool → 🟣, it needs you → 🔴 **PENDING**, it finishes → 🟢.
 
 ## How it works
 
 ```
-[ remote server (behind your VPN) ]                    [ your local machine ]
-
   Claude Code hooks
-     └─ wisp signal <event> ──▶  wispd  ── the state hub ──┐
-        (reads session_id/tool          127.0.0.1:9099     │  displays subscribe:
-         from the hook's stdin)         + joins Claude's    │
-                                        session roster      ├─ terminal lamp  → shown in your SSH window
-                                        ~/.claude/sessions   │  (runs on the server)
-                                                             └─ browser lamp   ◀─ ssh -L ─ your browser
+    └─ wisp signal <event> ─▶  wispd (the hub) ─┐
+       reads session/tool       127.0.0.1:9099   │  displays subscribe:
+       from the hook's stdin     + Claude's       ├─ terminal panel   (bin/wisp watch)
+                                 session roster    └─ browser page     (GET / over the hub)
 ```
 
-- **`wisp signal`** (hook client) posts `{session_id, state, tool, effort}` — plus `agent_id`/`agent_type` when the event comes from a subagent — to the hub and exits. Model and context-window usage are read separately by the hub from the session transcripts.
-- **`wispd`** (hub) keeps per-session state (and per-subagent state), joins it with Claude Code's own live-session registry (`~/.claude/sessions/*.json`) for real names/cwd, and parses each session's transcript for token usage. It serves `GET /sessions`, `GET /aggregate` (alias `GET /state`), `GET /usage` (per-model tokens + estimated cost), and `GET /` (the browser lamp page).
-- **Displays** poll the hub. The terminal lamp runs *on the server* and paints your SSH window; the browser lamp is a page the hub serves, reached via a one-line `ssh -L` forward.
+- **`wisp signal`** — the hook client. Posts the event to the hub and exits. 0.3 s timeout, swallows errors, always exits 0.
+- **`wispd`** — the hub. Tracks per-session (and per-subagent) state, joins it with Claude's own session registry for names and working directories, and reads each transcript for model, context, tokens, and cost. Binds `127.0.0.1` only.
+- **the displays** poll the hub. The panel paints whatever terminal you run it in; the browser page is served by the hub at `GET /`.
 
-## Using the terminal panel
+## The panel
 
 | key | action |
 |-----|--------|
-| `1`–`9` | **focus** the Nth session (the Reactor Core tracks only that one) |
-| `0` / `Esc` | back to the **aggregate** overview |
+| `1`–`9` | focus that session (the reactor tracks only it) |
+| `0` / `Esc` | back to the overview |
 | `q` | quit |
 
-The panel is a neon HUD on black, in three zones top to bottom:
-
-- a big animated **Reactor Core** — a magenta/cyan/purple plasma field with a faint katakana **data-rain**, a moving **scanline**, an occasional **glitch**, a `// STATE //`-style HUD title, and the aggregate (or focused) state spelled out **big, in 3-row half-block ASCII art** (falling back to a small one-line label if the panel is too narrow or short);
-- a **numbered session table** — each row shows **model**, **state**, **reasoning effort**, a **context-window gauge**, a neon heartbeat, **time in state**, and **cumulative tokens**; a session's running **subagents** appear beneath it as `↳`-prefixed sub-rows with the same telemetry;
-- a **Usage HUD** — a glowing running cost total, an input/output/cache token breakdown, and a per-model neon energy bar for the top models by spend.
-
-Tuned for cross-continental SSH: low frame rate, deterministic per-cell updates, forced truecolor, bright text on dark fills so it stays readable over a laggy link.
+Three zones, top to bottom: the **reactor** (the aggregate state, drawn big); the **session table** (one row per session, subagents indented beneath, each with model · state · effort · context gauge · a heartbeat · time-in-state · tokens); and the **usage line** (total cost, token breakdown, per-model bars).
 
 ## Browser lamp
 
-The hub serves a self-contained page at `/`. From your local machine, forward the port over SSH and open it:
-
 ```bash
-ssh -L 9099:localhost:9099 <your-server>
-# then open http://localhost:9099 in your browser
+open http://localhost:9099
+# if the hub is on another machine, forward the port first:
+#   ssh -L 9099:localhost:9099 <host>
 ```
 
-Multi-session cards, a breathing canvas lamp, and click-to-focus — nice for a second monitor.
+Multi-session cards and a breathing lamp — handy on a second monitor.
 
 ## Configuration
 
 | variable | default | meaning |
 |----------|---------|---------|
-| `WISP_PORT` | `9099` | hub port (hub always binds `127.0.0.1`) |
-| `WISP_PYTHON` | `python3` | interpreter for the hub/hooks; also the first candidate for `watch` |
-| `WISP_PLAIN` | unset | set to `1` for a flat color block instead of the plasma effect |
-| `WISP_POLL` | `0.25` | poll interval (seconds) for the `--simple` lamp |
-| `WISP_LANG` | `en` | `en` \| `zh` — sets the language of every surface: terminal panel, browser page, simple lamp, and CLI output |
-
-**Frame rate:** the Reactor Core and Usage HUD run at 6 fps by default (tuned for rendering over a long-distance SSH link). Edit the `set_interval(1 / 6, ...)` calls in `agenticwisp/tui/app.py` — raise them (`1 / 10`) on a fast/local connection, or lower them (`1 / 3`) to save CPU.
-
-> **Tip for slow/remote links:** a full-screen animated terminal is heavy over transcontinental SSH. If it feels choppy, lower the frame rate or use `WISP_PLAIN=1` (or `wisp watch --simple`).
+| `WISP_PORT` | `9099` | hub port (always bound to `127.0.0.1`) |
+| `WISP_PYTHON` | `python3` | interpreter for the hub/hooks and the first `watch` candidate |
+| `WISP_PLAIN` | unset | `1` = a flat color block instead of the plasma effect |
+| `WISP_POLL` | `0.25` | poll interval (s) for the `--simple` lamp |
+| `WISP_LANG` | `en` | `en` or `zh` — the language of every surface (panel, browser, CLI) |
 
 ## State → color
 
 | state | color | when |
 |-------|-------|------|
-| `idle` | 🟢 green `#22a04a` | Claude finished / is waiting for your next prompt |
-| `thinking` | 🟡 yellow `#d2aa1e` | reasoning between tool calls |
-| `tool` | 🟣 purple `#8b5cf6` | running a tool |
-| `waiting` | 🔵 cyan `#22b8cf` | needs your input / a permission decision |
-| `error` | 🔴 red `#e5484d` | a tool or turn failed |
+| idle | 🟢 `#22a04a` | finished / waiting for your next prompt |
+| thinking | 🟡 `#d2aa1e` | reasoning between tool calls |
+| tool | 🟣 `#8b5cf6` | running a tool |
+| waiting | 🔵 `#22b8cf` | needs your input — drawn as red **PENDING** in the reactor |
+| error | 🔴 `#e5484d` | a tool or turn failed |
 
-When several sessions are live, the aggregate lamp shows the highest-priority state:
-`waiting > error > tool > thinking > idle`.
+With several sessions live, the light shows the highest-priority state: `waiting > error > tool > thinking > idle`.
 
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests          # core suite (stdlib only)
-# with textual installed, the terminal-panel tests run too:
-.venv/bin/python -m unittest discover -s tests
+python3 -m unittest discover -s tests           # core suite (stdlib only)
+.venv/bin/python -m unittest discover -s tests   # + the panel tests, with textual installed
 ```
 
 ## Roadmap
 
-- **Physical light** — a real Arduino traffic-light module driven over USB, mapping to red/yellow/green for the one session you care about most (the architecture already exposes `GET /aggregate` for exactly this) — waiting on IT to approve the USB device.
-- Per-tool colors, custom palettes, and richer browser animations.
+- A physical Arduino traffic light on the desk, driven over USB (`GET /aggregate` already exposes exactly what it needs).
+- Per-tool colors and richer browser animations.
 
 ## License
 
-[MIT](LICENSE) — do whatever you like; a copyright notice is appreciated.
+[MIT](LICENSE).
 
----
-
-<sub>AgenticWisp is a couple of overworked PhD students scratching their own itch — a for-fun side project born out of one too many "wait, is my Claude still running?" moments, not a company product. Enjoy it in that spirit.</sub>
+<sub>Built by two PhD students who kept losing track of what their Claude was up to — and wanted the thing that tells them to look good.</sub>

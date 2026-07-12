@@ -281,6 +281,26 @@ class ReactorNeonTest(unittest.TestCase):
                             for row in grid for g in row),
                         "waiting reactor 底色应偏红")
 
+    def test_bigfont_has_C_and_S_for_logo(self):
+        # logo 大字 AGENTICWISP 需要 C 和 S
+        for ch in "AGENTICWISP":
+            self.assertIn(ch, effects._BIGFONT, f"字体缺 {ch!r}")
+
+    def test_compose_core_word_override_skips_title(self):
+        # word 覆盖中央大字(用于 logo);此时不画冗余的 // WORD // 标题
+        grid = effects.compose_core(64, 9, "idle", 0.0, word="AGENTICWISP")
+        joined = "".join(g[0] for row in grid for g in row)
+        self.assertNotIn("// ", joined)           # 无 HUD 标题
+        block_rows = sum(1 for row in grid if "█" in "".join(g[0] for g in row))
+        self.assertGreaterEqual(block_rows, 3)    # 3 行大字符画渲染出来了
+
+    def test_compose_core_base_hex_override(self):
+        # base_hex 覆盖底色色相(logo 品牌色);给纯青,底色应偏青(b、g > r)
+        grid = effects.compose_core(64, 9, "idle", 0.0, word="X", base_hex="#0abdc6")
+        self.assertTrue(any(g[2][2] > g[2][0] + 20 and g[2][1] > g[2][0] + 20
+                            for row in grid for g in row),
+                        "base_hex=CYAN 时底色应偏青")
+
     def test_compose_core_deterministic(self):
         self.assertEqual(effects.compose_core(20, 6, "idle", 2.0),
                          effects.compose_core(20, 6, "idle", 2.0))

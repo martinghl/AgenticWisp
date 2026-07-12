@@ -85,6 +85,8 @@ _BIGFONT = {
     "W": ["█   █", "█ ▄ █", "▀▄▀▄▀"],
     "A": ["▄▀▄", "█▀█", "█ █"],
     "R": ["█▀▄", "█▀▄", "█ █"],
+    "C": ["▄▀▀", "█  ", "▀▄▄"],
+    "S": ["▄▀▀", "▀▀▄", "▄▄▀"],
 }
 
 
@@ -133,13 +135,17 @@ def _place_lines(grid, w, h, lines, color):
                 grid[y][x] = [ch, color, grid[y][x][2]]
 
 
-def compose_core(w, h, state, t, from_state=None, trans_p=1.0, fancy=True):
-    """产出 h×w 字符网格,每格 [char, fg|None, bg]。赛博朋克:霓虹等离子 + 数据雨 + 扫描线 + glitch + HUD 标题。"""
+def compose_core(w, h, state, t, from_state=None, trans_p=1.0, fancy=True, word=None, base_hex=None):
+    """产出 h×w 字符网格,每格 [char, fg|None, bg]。赛博朋克:霓虹等离子 + 数据雨 + 扫描线 + glitch + HUD 标题。
+    word:覆盖中央大字(用于 logo,例如 "AGENTICWISP";此时不画 // STATE // 标题)。
+    base_hex:覆盖底色色相(用于 logo 品牌色)。"""
     # waiting = Claude 在等你操作(问你/等审批)——最该看:整块红色警示 + 大字 "PENDING",
     # 盖过平静的蓝。disp 是标题/大字用的显示词。
     pending = (state == "waiting")
-    disp = "pending" if pending else state
-    if pending:
+    disp = word if word is not None else ("pending" if pending else state)
+    if base_hex is not None:
+        base = base_hex
+    elif pending:
         base = palette.PINK
     elif from_state is not None and trans_p < 1.0:
         base = transition_color(palette.state_hex(from_state), palette.state_hex(state), trans_p)
@@ -166,10 +172,9 @@ def compose_core(w, h, state, t, from_state=None, trans_p=1.0, fancy=True):
     # HUD 标题(顶行,单宽 ASCII 标签):全角字符是双宽(占 2 终端列),
     # 放进"每格 1 列"的网格会让该行渲染得比 w 宽→终端折行、把下一行挤黑;
     # 故这里用单宽 "// STATE //"。(hud_title 的全角只用于 UsageHUD 的自由文本行。)
-    title = "// " + (disp.upper() if disp else "REACTOR") + " //"
-    # HUD 标题放最上一行(居中),边界检查针对实际网格;整段清掉背景数据雨,
-    # 让标签读作干净的 "// STATE //"(空格也写成空位,只保留该格 bg)
-    if grid:
+    # 自定义大字(word,如 logo)时不画冗余的 // WORD // 标题;仅展示状态时画。
+    if word is None and grid:
+        title = "// " + (disp.upper() if disp else "REACTOR") + " //"
         x0 = max(0, (w - len(title)) // 2)
         for j, ch in enumerate(title):
             x = x0 + j
