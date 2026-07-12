@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import threading
 import unittest
@@ -14,6 +15,12 @@ except Exception:
 @unittest.skipUnless(HAVE_TEXTUAL, "textual 未安装")
 class TuiAppTest(unittest.TestCase):
     def setUp(self):
+        # Python 3.9: textual widgets grab the current asyncio loop at construction
+        # (via asyncio.Lock), and asyncio.run() in the run_test-based tests leaves the
+        # current loop cleared — so give every test a fresh current loop for any bare
+        # widget construction. Harmless on 3.10+ (run_test uses its own loop).
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
         self.tmp_roster = tempfile.mkdtemp()
         self.tmp_projects = tempfile.mkdtemp()
         self.store = SessionStore()
@@ -41,6 +48,9 @@ class TuiAppTest(unittest.TestCase):
     def tearDown(self):
         self.httpd.shutdown()
         self.httpd.server_close()
+        if not self._loop.is_closed():
+            self._loop.close()
+        asyncio.set_event_loop(None)
 
     def test_fetch_sessions(self):
         self.store.update("s1", "tool", "Bash")
