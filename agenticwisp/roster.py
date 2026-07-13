@@ -16,7 +16,12 @@ def _display_name(meta):
 
 
 def read_roster(sessions_dir="~/.claude/sessions"):
-    """扫花名册目录 → {session_id: {name, cwd, status, pid}};坏文件/缺 id 跳过。"""
+    """扫花名册目录 → {session_id: {name, cwd, status, pid}};坏文件/缺 id/后台会话跳过。
+
+    只保留用户在终端里亲手开的会话。Claude Code 的 daemon 会为后台 job 和预热的
+    spare 会话也写花名册文件,它们标为 kind:"bg";fork/resume 出来的后台 job 常继承
+    母会话相同的 name+cwd,若不过滤会在面板上显示成重复行。用 denylist(只删显式
+    "bg")而非 allowlist("interactive"),这样老版不写 kind 的会话仍照常保留。"""
     d = os.path.expanduser(sessions_dir)
     out = {}
     try:
@@ -35,6 +40,8 @@ def read_roster(sessions_dir="~/.claude/sessions"):
             continue
         sid = meta.get("sessionId")
         if not sid:
+            continue
+        if meta.get("kind") == "bg":     # daemon 派生的后台 job / spare,非用户会话
             continue
         out[sid] = {
             "name": _display_name(meta),

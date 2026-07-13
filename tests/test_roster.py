@@ -40,6 +40,24 @@ class RosterTest(unittest.TestCase):
         r = roster.read_roster(self.dir)
         self.assertEqual(set(r), {"ccc"})
 
+    def test_skips_bg_kind_sessions(self):
+        # daemon 派生的后台 job / spare 会话(kind:"bg")不是用户开的,应跳过;
+        # 它们常继承母会话相同的 name+cwd,否则会在面板上显示成重复行。
+        self._write("interactive.json", {"sessionId": "live", "cwd": "/data/gli9",
+                                         "name": "Agentic Wisp", "kind": "interactive"})
+        self._write("bg_fork.json", {"sessionId": "fork", "cwd": "/data/gli9",
+                                     "name": "Agentic Wisp", "kind": "bg", "jobId": "fork"})
+        self._write("bg_spare.json", {"sessionId": "spare", "cwd": "/data/gli9",
+                                      "kind": "bg", "agent": "claude"})
+        r = roster.read_roster(self.dir)
+        self.assertEqual(set(r), {"live"})
+
+    def test_keeps_sessions_without_kind(self):
+        # 老版 Claude Code 不写 kind:denylist 只删显式 bg,缺字段的照常保留(向后兼容)。
+        self._write("nokind.json", {"sessionId": "old", "cwd": "/x", "name": "Old"})
+        r = roster.read_roster(self.dir)
+        self.assertEqual(set(r), {"old"})
+
     def test_missing_dir_returns_empty(self):
         self.assertEqual(roster.read_roster("/no/such/dir/xyz"), {})
 

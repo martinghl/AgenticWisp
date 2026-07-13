@@ -8,9 +8,9 @@ except ImportError:  # py < 3.11
 
 
 class VersionTest(unittest.TestCase):
-    def test_version_is_010(self):
+    def test_version_is_011(self):
         import agenticwisp
-        self.assertEqual(agenticwisp.__version__, "0.1.0")
+        self.assertEqual(agenticwisp.__version__, "0.1.1")
 
     def test_docstring_dropped_old_remote_framing(self):
         import agenticwisp
