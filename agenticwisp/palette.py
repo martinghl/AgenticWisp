@@ -11,6 +11,7 @@ AMBER = "#ffb300"
 PALE = "#d1f7ff"
 NAVY = "#091833"
 RAIL = "#123a44"   # 暗轨(未填充/未知)
+MUTED = "#6a6a78"  # 中灰:标记冻结/不活跃(stale)的行,明显区别于霓虹色
 
 _STATE_NEON = {
     protocol.IDLE: CYAN,

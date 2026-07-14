@@ -3,6 +3,25 @@ import json
 import os
 
 
+def _pid_alive(pid):
+    """True unless the pid is definitely gone. Missing / non-int pid → True (can't tell);
+    a live-but-not-ours pid (EPERM) → True; only a missing process (ESRCH) → False.
+    Any other error → True (fail open — never hide a session over a stat hiccup)."""
+    if pid is None:
+        return True
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except Exception:                 # OverflowError(超范围 pid)、EPERM、任何其它 → 保留(fail-open)
+        return True
+    return True
+
+
 def _display_name(meta):
     """显示名:name > cwd 目录名 > sessionId 前 8 位 > unknown。"""
     name = meta.get("name")
@@ -16,12 +35,14 @@ def _display_name(meta):
 
 
 def read_roster(sessions_dir="~/.claude/sessions"):
-    """扫花名册目录 → {session_id: {name, cwd, status, pid}};坏文件/缺 id/后台会话跳过。
+    """扫花名册目录 → {session_id: {name, cwd, status, pid}};坏文件/缺 id/后台会话/死进程跳过。
 
     只保留用户在终端里亲手开的会话。Claude Code 的 daemon 会为后台 job 和预热的
     spare 会话也写花名册文件,它们标为 kind:"bg";fork/resume 出来的后台 job 常继承
     母会话相同的 name+cwd,若不过滤会在面板上显示成重复行。用 denylist(只删显式
-    "bg")而非 allowlist("interactive"),这样老版不写 kind 的会话仍照常保留。"""
+    "bg")而非 allowlist("interactive"),这样老版不写 kind 的会话仍照常保留。
+    进程已死或无法判定的条目(pid 缺失/非法/不可判断)fail-open 保留,避免花名册
+    损坏导致崩掉整个 /sessions 端点。"""
     d = os.path.expanduser(sessions_dir)
     out = {}
     try:
@@ -42,6 +63,8 @@ def read_roster(sessions_dir="~/.claude/sessions"):
         if not sid:
             continue
         if meta.get("kind") == "bg":     # daemon 派生的后台 job / spare,非用户会话
+            continue
+        if not _pid_alive(meta.get("pid")):   # 进程已死,花名册文件残留 → 幽灵行
             continue
         out[sid] = {
             "name": _display_name(meta),

@@ -15,6 +15,7 @@ from agenticwisp import i18n
 DEFAULT_PORT = 9099
 SUBAGENT_TTL = 90.0  # 秒:子agent 超此未更新即视为结束(防 SubagentStop 漏)
 USAGE_MIN_INTERVAL = 2.0  # 秒:每 session transcript 最多这么久重读一次(限流)
+STALE_SECS_DEFAULT = 300.0  # 秒:idle 会话的 transcript 超此未增长即标记 stale(WISP_STALE_SECS 覆盖)
 
 
 class SessionStore:
@@ -210,6 +211,19 @@ class UsageTracker:
         with self._lock:
             self._st.pop(session_id, None)
 
+    def transcript_mtime(self, session_id):
+        """该 session 已缓存 transcript 路径的 mtime(epoch 秒),未知/不可读 → None。
+        不解析、不读取文件,仅 stat 已缓存路径。"""
+        with self._lock:
+            e = self._st.get(session_id)
+            path = e["path"] if e else None
+        if not path:
+            return None
+        try:
+            return os.path.getmtime(path)
+        except OSError:
+            return None
+
     def prune(self, live_ids):
         """Drops _st / _sub entries whose (parent) session_id is not in the given live set."""
         keep = set(live_ids)
@@ -220,6 +234,21 @@ class UsageTracker:
             for key in list(self._sub):
                 if key.split("\x00", 1)[0] not in keep:
                     del self._sub[key]
+
+
+def _stale_secs():
+    """读 WISP_STALE_SECS;缺失/非数值/<=0 → STALE_SECS_DEFAULT。"""
+    try:
+        v = float(os.environ.get("WISP_STALE_SECS", ""))
+    except (TypeError, ValueError):
+        return STALE_SECS_DEFAULT
+    return v if v > 0 else STALE_SECS_DEFAULT
+
+
+def _is_stale(state, mtime, now, stale_secs):
+    """仅 idle + 有 transcript + 超过 stale_secs 未增长 → True。"""
+    return (state == protocol.IDLE and mtime is not None
+            and (now - mtime) > stale_secs)
 
 
 def _active_subagents(detail, now, ttl):
@@ -289,12 +318,15 @@ def make_handler(store, sessions_dir="~/.claude/sessions", tracker=None):
         def _sessions(self):
             rows = build_sessions(roster.read_roster(sessions_dir), store.snapshot())
             now = time.time()
+            stale_secs = _stale_secs()
             for row in rows:
                 row["tokens"] = tracker.tokens_for(row["id"], now)
                 model, ctx = tracker.model_ctx_for(row["id"], now)
                 row["model"] = model
                 row["ctx_used"] = ctx
                 row["ctx_max"] = pricing.max_context(model) if model else None
+                row["stale"] = _is_stale(row["state"], tracker.transcript_mtime(row["id"]),
+                                         now, stale_secs)
                 for sub in row.get("subagents", []):
                     m, c = tracker.subagent_model_ctx(row["id"], sub["id"], now)
                     sub["model"] = m

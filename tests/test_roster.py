@@ -58,8 +58,29 @@ class RosterTest(unittest.TestCase):
         r = roster.read_roster(self.dir)
         self.assertEqual(set(r), {"old"})
 
+    def test_skips_dead_pid_sessions(self):
+        self._write("live.json", {"sessionId": "live", "cwd": "/x", "pid": os.getpid()})
+        self._write("dead.json", {"sessionId": "dead", "cwd": "/x", "pid": 99999999})
+        r = roster.read_roster(self.dir)
+        self.assertEqual(set(r), {"live"})
+
+    def test_keeps_sessions_without_pid(self):
+        # 老版/异常写入没有 pid → 判不了死活,保留(fail-open)。
+        self._write("nopid.json", {"sessionId": "np", "cwd": "/x", "name": "N"})
+        self.assertEqual(set(roster.read_roster(self.dir)), {"np"})
+
+    def test_keeps_non_int_pid(self):
+        self._write("weird.json", {"sessionId": "w", "cwd": "/x", "pid": "notanumber"})
+        self.assertEqual(set(roster.read_roster(self.dir)), {"w"})
+
     def test_missing_dir_returns_empty(self):
         self.assertEqual(roster.read_roster("/no/such/dir/xyz"), {})
+
+    def test_keeps_huge_pid(self):
+        # 超出 pid 范围的垃圾值会让 os.kill 抛 OverflowError(非 OSError)——
+        # 必须 fail-open 保留,否则一个损坏的花名册文件会崩掉整个 /sessions。
+        self._write("huge.json", {"sessionId": "h", "cwd": "/x", "pid": 10**20})
+        self.assertEqual(set(roster.read_roster(self.dir)), {"h"})
 
 
 if __name__ == "__main__":

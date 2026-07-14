@@ -238,7 +238,7 @@ class WispApp(App):
             for k in list(d):
                 if k not in live:
                     d.pop(k, None)
-        self._rows = [(key, obj["state"]) for key, _k, _n, obj in display]
+        self._rows = [(key, obj["state"], bool(obj.get("stale"))) for key, _k, _n, obj in display]
         # 焦点失效则清除
         focused = next((s for s in sessions if s["id"] == self._focus_id), None)
         if self._focus_id and focused is None:
@@ -259,18 +259,21 @@ class WispApp(App):
         table.clear()
         for key, kind, num, obj in display:
             state = obj["state"]
+            is_stale = bool(obj.get("stale"))
             hexc = palette.state_hex(state)
+            beat_hex = palette.MUTED if is_stale else hexc
             pulse = min(1.0, self._pulse(key, now) + self._token_pulse(key, now))
             beat = effects.neon_pulse(state, now, _HEART_W, phase=self._phase(key), pulse=pulse)
             dur = render.fmt_duration(now - self._last_change.get(key, now))
             model = render.short_model(obj.get("model")) if obj.get("model") else "—"
             effort = obj.get("effort") or "—"
-            eff_cell = Text(effort, style=palette.effort_color(obj.get("effort")))
+            eff_cell = Text(effort, style=palette.MUTED if is_stale
+                            else palette.effort_color(obj.get("effort")))
             cu, cm = obj.get("ctx_used"), obj.get("ctx_max")
             frac = (cu / cm) if (cu is not None and cm) else None
             gbar, gcol = effects.gauge(frac, 8)
             pct = f"{int(frac * 100)}%" if frac is not None else "—"
-            ctx_cell = Text(f"{gbar} {pct}", style=gcol)
+            ctx_cell = Text(f"{gbar} {pct}", style=palette.MUTED if is_stale else gcol)
             if kind == "sess":
                 mark = "▸" if obj["id"] == self._focus_id else " "
                 nm = obj.get("name", "")
@@ -280,8 +283,17 @@ class WispApp(App):
                 nm = f"  ↳ {obj.get('type', 'agent')}"
                 num_col = " "
                 tok = "—"
-            table.add_row(num_col, nm, model, Text(f"● {state}", style=hexc), eff_cell,
-                          ctx_cell, Text(beat, style=hexc), dur, tok, key=key)
+            if is_stale:
+                state_cell = Text(f"⏸ {state}", style=palette.MUTED)
+                num_col = Text(num_col, style=palette.MUTED)
+                nm = Text(nm, style=palette.MUTED)
+                model = Text(model, style=palette.MUTED)
+                dur = Text(dur, style=palette.MUTED)
+                tok = Text(tok, style=palette.MUTED)
+            else:
+                state_cell = Text(f"● {state}", style=hexc)
+            table.add_row(num_col, nm, model, state_cell, eff_cell,
+                          ctx_cell, Text(beat, style=beat_hex), dur, tok, key=key)
         try:
             self.query_one("#dash", UsageHUD).set_data(
                 fetch_usage(self.host, self.port, timeout=1.0))
@@ -305,12 +317,15 @@ class WispApp(App):
     def animate_heartbeats(self):
         now = time.monotonic() - self._t0
         table = self.query_one("#table", DataTable)
-        for key, state in self._rows:
+        for key, state, stale in self._rows:
             pulse = min(1.0, self._pulse(key, now) + self._token_pulse(key, now))
             beat = effects.neon_pulse(state, now, _HEART_W, phase=self._phase(key), pulse=pulse)
+            hcol = palette.MUTED if stale else palette.state_hex(state)
+            dur = render.fmt_duration(now - self._last_change.get(key, now))
             try:
-                table.update_cell(key, "heart", Text(beat, style=palette.state_hex(state)))
-                table.update_cell(key, "time", render.fmt_duration(now - self._last_change.get(key, now)))
+                table.update_cell(key, "heart", Text(beat, style=hcol))
+                table.update_cell(key, "time",
+                                  Text(dur, style=palette.MUTED) if stale else dur)
             except Exception:
                 pass
 

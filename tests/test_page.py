@@ -47,6 +47,11 @@ class PageTest(unittest.TestCase):
             else:
                 os.environ["WISP_LANG"] = old
 
+    def test_stale_card_class_present(self):
+        html = render_page()
+        self.assertIn(".card.stale", html)   # CSS 规则存在
+        self.assertIn("s.stale", html)       # JS 读取 stale 字段
+
 
 if __name__ == "__main__":
     unittest.main()

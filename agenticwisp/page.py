@@ -25,6 +25,7 @@ _TEMPLATE = """<!doctype html>
     cursor:pointer;transition:transform .1s,box-shadow .2s}
   .card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.4)}
   .card.focus{outline:2px solid #fff}
+  .card.stale{opacity:.45}
   .name{font-weight:700;font-size:1.05em;margin-bottom:4px}
   .cwd{font-size:.8em;color:#999;word-break:break-all;margin-bottom:6px}
   .st{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.8em;color:#111;font-weight:700}
@@ -63,7 +64,7 @@ function draw(){
 requestAnimationFrame(draw);
 function card(s){
   const el=document.createElement('div');
-  el.className='card'+(s.id===focusId?' focus':'');
+  el.className='card'+(s.stale?' stale':'')+(s.id===focusId?' focus':'');
   el.style.borderLeftColor=CFG.colors[s.state]||'#333';
   const nm=document.createElement('div');nm.className='name';nm.textContent=s.name||s.id||'';
   const cw=document.createElement('div');cw.className='cwd';cw.textContent=s.cwd||'';

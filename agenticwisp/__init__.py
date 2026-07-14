@@ -2,4 +2,4 @@
 
 A status light and a status line for Claude Code, in a cyberpunk terminal panel.
 """
-__version__ = "0.1.1"
+__version__ = "0.1.2"

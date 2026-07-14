@@ -90,7 +90,7 @@ class TuiAppTest(unittest.TestCase):
                 # 真正验证子行被渲染:表里有子行、_rows 含其状态、名字列是 ↳ 类型
                 table = app.query_one("#table")
                 self.assertEqual(table.row_count, 2)
-                self.assertIn(("s1\x00a1", "tool"), app._rows)
+                self.assertIn(("s1\x00a1", "tool", False), app._rows)
                 self.assertIn("Explore", table.get_row("s1\x00a1")[1])
         import asyncio
         asyncio.run(run())
@@ -215,6 +215,69 @@ class TuiAppTest(unittest.TestCase):
                 joined = " ".join(str(c) for c in row)
                 self.assertIn("opus-4-8", joined)
                 self.assertIn("max", joined)
+        import asyncio
+        asyncio.run(run())
+
+    def test_stale_row_shows_pause_marker(self):
+        import os as _os
+        self.store.update("s1", "idle")
+        self._write_transcript("s1", [{"input_tokens": 100}])
+        proj = _os.path.join(self.tmp_projects, "proj")
+        _os.utime(_os.path.join(proj, "s1.jsonl"), (1.0, 1.0))   # 极旧 → stale
+        app = WispApp(host="127.0.0.1", port=self.port)
+        async def run():
+            async with app.run_test() as pilot:
+                app.refresh_state(); await pilot.pause()
+                row = app.query_one("#table").get_row("s1")
+                self.assertIn("⏸", str(row[3]))                 # state 列(索引3)
+        import asyncio
+        asyncio.run(run())
+
+    def test_active_row_no_pause_marker(self):
+        self.store.update("s1", "tool", "Bash")
+        app = WispApp(host="127.0.0.1", port=self.port)
+        async def run():
+            async with app.run_test() as pilot:
+                app.refresh_state(); await pilot.pause()
+                row = app.query_one("#table").get_row("s1")
+                self.assertNotIn("⏸", str(row[3]))
+                self.assertIn("●", str(row[3]))
+        import asyncio
+        asyncio.run(run())
+
+    def test_stale_row_fully_muted(self):
+        import os as _os
+        from agenticwisp import palette
+        self.store.update("s1", "idle")
+        self._write_transcript("s1", [{"input_tokens": 100}])
+        proj = _os.path.join(self.tmp_projects, "proj")
+        _os.utime(_os.path.join(proj, "s1.jsonl"), (1.0, 1.0))   # 极旧 → stale
+        app = WispApp(host="127.0.0.1", port=self.port)
+        async def run():
+            async with app.run_test() as pilot:
+                app.refresh_state(); await pilot.pause()
+                app.animate_heartbeats(); await pilot.pause()   # 证明 animate 后 heart/time 仍 MUTED
+                table = app.query_one("#table")
+                row = table.get_row("s1")
+                # 列: 0#,1session,2model,3state,4effort,5ctx,6heart,7time,8token
+                for i in (3, 4, 5, 6, 7):
+                    self.assertEqual(row[i].style, palette.MUTED,
+                                     f"stale 行第 {i} 列应为 MUTED, 实际 {row[i].style!r}")
+        import asyncio
+        asyncio.run(run())
+
+    def test_active_row_heart_not_muted(self):
+        from agenticwisp import palette
+        self.store.update("s1", "tool", "Bash")
+        app = WispApp(host="127.0.0.1", port=self.port)
+        async def run():
+            async with app.run_test() as pilot:
+                app.refresh_state(); await pilot.pause()
+                app.animate_heartbeats(); await pilot.pause()
+                table = app.query_one("#table")
+                row = table.get_row("s1")
+                self.assertEqual(row[6].style, palette.state_hex("tool"))   # heart 用状态色
+                self.assertNotEqual(row[6].style, palette.MUTED)
         import asyncio
         asyncio.run(run())
 

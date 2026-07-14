@@ -228,6 +228,21 @@ class UsageTrackerTest(unittest.TestCase):
         self.assertIn("s1", tr._st)
         self.assertNotIn("s2", tr._st)
 
+    def test_transcript_mtime(self):
+        from agenticwisp.wispd import UsageTracker
+        import os
+        self._write("s1", 1000)
+        tr = UsageTracker(self.base, min_interval=0.0)
+        self.assertIsNone(tr.transcript_mtime("s1"))    # 路径未解析前 → None
+        tr.tokens_for("s1", now=100.0)                  # 触发路径解析
+        os.utime(os.path.join(self.proj, "s1.jsonl"), (2500.0, 2500.0))
+        self.assertEqual(tr.transcript_mtime("s1"), 2500.0)
+
+    def test_transcript_mtime_unknown_session(self):
+        from agenticwisp.wispd import UsageTracker
+        tr = UsageTracker(self.base, min_interval=0.0)
+        self.assertIsNone(tr.transcript_mtime("ghost"))
+
 
 class SessionsTokensEndpointTest(unittest.TestCase):
     def setUp(self):
@@ -409,6 +424,74 @@ class SessionsModelCtxEndpointTest(unittest.TestCase):
         self.assertEqual(row["ctx_used"], 700000)
         self.assertEqual(row["ctx_max"], 1_000_000)
         self.assertEqual(row["effort"], "max")
+
+
+class StaleHelperTest(unittest.TestCase):
+    def test_is_stale_only_idle_and_old(self):
+        from agenticwisp.wispd import _is_stale
+        from agenticwisp import protocol
+        self.assertTrue(_is_stale(protocol.IDLE, 100.0, 500.0, 300.0))    # 400s 旧
+        self.assertFalse(_is_stale(protocol.IDLE, 100.0, 200.0, 300.0))   # 100s 新鲜
+        self.assertFalse(_is_stale(protocol.TOOL, 100.0, 999.0, 300.0))   # 非 idle 永不
+        self.assertFalse(_is_stale(protocol.IDLE, None, 999.0, 300.0))    # 无 transcript
+
+    def test_stale_secs_env(self):
+        import os
+        from agenticwisp.wispd import _stale_secs, STALE_SECS_DEFAULT
+        old = os.environ.get("WISP_STALE_SECS")
+        try:
+            os.environ.pop("WISP_STALE_SECS", None)
+            self.assertEqual(_stale_secs(), STALE_SECS_DEFAULT)
+            os.environ["WISP_STALE_SECS"] = "120"
+            self.assertEqual(_stale_secs(), 120.0)
+            os.environ["WISP_STALE_SECS"] = "-5"       # <=0 → 默认
+            self.assertEqual(_stale_secs(), STALE_SECS_DEFAULT)
+            os.environ["WISP_STALE_SECS"] = "abc"      # 非数值 → 默认
+            self.assertEqual(_stale_secs(), STALE_SECS_DEFAULT)
+        finally:
+            if old is None:
+                os.environ.pop("WISP_STALE_SECS", None)
+            else:
+                os.environ["WISP_STALE_SECS"] = old
+
+
+class SessionsStaleFieldTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp_roster = tempfile.mkdtemp()
+        self.base = tempfile.mkdtemp()
+        self.proj = os.path.join(self.base, "proj"); os.makedirs(self.proj)
+        with open(os.path.join(self.proj, "s1.jsonl"), "w") as f:
+            f.write(json.dumps({"message": {"usage": {"input_tokens": 500}}}) + "\n")
+        from agenticwisp.wispd import UsageTracker
+        self.store = SessionStore()
+        self.tracker = UsageTracker(self.base, min_interval=0.0)
+        self.httpd, _ = serve(port=0, store=self.store,
+                              sessions_dir=self.tmp_roster, tracker=self.tracker)
+        self.port = self.httpd.server_address[1]
+        self.t = threading.Thread(target=self.httpd.serve_forever, daemon=True); self.t.start()
+
+    def tearDown(self):
+        self.httpd.shutdown(); self.httpd.server_close()
+
+    def _row(self):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2.0)
+        conn.request("GET", "/sessions")
+        rows = json.loads(conn.getresponse().read().decode()); conn.close()
+        return next(r for r in rows if r["id"] == "s1")
+
+    def test_idle_old_transcript_is_stale(self):
+        self.store.update("s1", "idle")
+        os.utime(os.path.join(self.proj, "s1.jsonl"), (1.0, 1.0))   # 1970 → 极旧
+        self.assertTrue(self._row()["stale"])
+
+    def test_fresh_transcript_not_stale(self):
+        self.store.update("s1", "idle")                            # mtime≈now
+        self.assertFalse(self._row()["stale"])
+
+    def test_tool_state_never_stale(self):
+        self.store.update("s1", "tool", "Bash")
+        os.utime(os.path.join(self.proj, "s1.jsonl"), (1.0, 1.0))
+        self.assertFalse(self._row()["stale"])
 
 
 if __name__ == "__main__":
